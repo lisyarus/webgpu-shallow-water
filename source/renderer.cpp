@@ -3,9 +3,17 @@
 static char const shaderSource[] =
 R"(
 
+struct ViewSettings
+{
+    viewMatrix : mat4x4f,
+    simulationSize : vec2f,
+}
+
 @group(0) @binding(0) var bedWaterTexture : texture_2d<f32>;
 
 @group(1) @binding(0) var linearSampler : sampler;
+
+@group(2) @binding(0) var<uniform> viewSettings : ViewSettings;
 
 struct VertexOut
 {
@@ -20,13 +28,15 @@ fn drawBedWaterVertexMain(@builtin(vertex_index) index : u32) -> VertexOut
     if (index == 0u) {
         texcoord = vec2f(0.0);
     } else if (index == 1u) {
-        texcoord = vec2f(2.0, 0.0);
+        texcoord = vec2f(1.0, 0.0);
+    } else if (index == 2u ){
+        texcoord = vec2f(0.0, 1.0);
     } else {
-        texcoord = vec2f(0.0, 2.0);
+        texcoord = vec2f(1.0, 1.0);
     }
 
     return VertexOut(
-        vec4f(2.0 * texcoord - vec2f(1.0), 0.0, 1.0),
+        viewSettings.viewMatrix * vec4f(viewSettings.simulationSize * texcoord, 0.0, 1.0),
         texcoord
     );
 }
@@ -34,7 +44,8 @@ fn drawBedWaterVertexMain(@builtin(vertex_index) index : u32) -> VertexOut
 @fragment
 fn drawBedWaterFragmentMain(in : VertexOut) -> @location(0) vec4f
 {
-    return textureSampleLevel(bedWaterTexture, linearSampler, in.texcoord, 0.0);
+    return vec4f(in.texcoord, 0.0, 1.0);
+    // return textureSampleLevel(bedWaterTexture, linearSampler, in.texcoord, 0.0);
 }
 
 )";
@@ -52,28 +63,39 @@ struct Renderer::Impl
 
     WGPUSampler linearSampler = nullptr;
 
+    WGPUBuffer settingsUniformBuffer = nullptr;
+
     WGPUBindGroupLayout buffersBindGroupLayout = nullptr;
     WGPUBindGroup buffersBindGroup = nullptr;
 
     WGPUBindGroupLayout samplersBindGroupLayout = nullptr;
     WGPUBindGroup samplersBindGroup = nullptr;
 
+    WGPUBindGroupLayout settingsBindGroupLayout = nullptr;
+    WGPUBindGroup settingsBindGroup = nullptr;
+
     WGPURenderPipeline drawBedWaterPipeline = nullptr;
 
     Impl(WGPUDevice device, WGPUTextureFormat surfaceFormat);
 
     void update(SimulationBuffers const & simulationBuffers);
-    void render(WGPUTextureView target);
+    void render(WGPUTextureView target, ViewSettings const & viewSettings);
 
     void createShaderModule();
     void createBuffersBindGroupLayout();
     void createSamplersBindGroupLayout();
+    void createSettingsBindGroupLayout();
 
     void createSamplers();
     void createSamplersBindGroup();
 
+    void createSettingsUniformBuffer();
+    void createSettingsBindGroup();
+
     void recreateBuffersBindGroup();
     void recreateDrawBedWaterPipeline();
+
+    void updateSettingsBuffer(ViewSettings const & viewSettings);
 };
 
 Renderer::Impl::Impl(WGPUDevice device, WGPUTextureFormat surfaceFormat)
@@ -87,6 +109,10 @@ Renderer::Impl::Impl(WGPUDevice device, WGPUTextureFormat surfaceFormat)
     createSamplersBindGroupLayout();
     createSamplers();
     createSamplersBindGroup();
+
+    createSettingsBindGroupLayout();
+    createSettingsUniformBuffer();
+    createSettingsBindGroup();
 }
 
 void Renderer::Impl::update(SimulationBuffers const & simulationBuffers)
@@ -100,8 +126,10 @@ void Renderer::Impl::update(SimulationBuffers const & simulationBuffers)
     }
 }
 
-void Renderer::Impl::render(WGPUTextureView target)
+void Renderer::Impl::render(WGPUTextureView target, ViewSettings const & viewSettings)
 {
+    updateSettingsBuffer(viewSettings);
+
     WGPUCommandEncoderDescriptor commandEncoderDescriptor = {};
     WGPUCommandEncoder commandEncoder = wgpuDeviceCreateCommandEncoder(device, &commandEncoderDescriptor);
 
@@ -119,8 +147,9 @@ void Renderer::Impl::render(WGPUTextureView target)
 
     wgpuRenderPassEncoderSetBindGroup(renderPassEncoder, 0, buffersBindGroup, 0, nullptr);
     wgpuRenderPassEncoderSetBindGroup(renderPassEncoder, 1, samplersBindGroup, 0, nullptr);
+    wgpuRenderPassEncoderSetBindGroup(renderPassEncoder, 2, settingsBindGroup, 0, nullptr);
     wgpuRenderPassEncoderSetPipeline(renderPassEncoder, drawBedWaterPipeline);
-    wgpuRenderPassEncoderDraw(renderPassEncoder, 3, 1, 0, 0);
+    wgpuRenderPassEncoderDraw(renderPassEncoder, 4, 1, 0, 0);
 
     wgpuRenderPassEncoderEnd(renderPassEncoder);
 
@@ -175,6 +204,23 @@ void Renderer::Impl::createSamplersBindGroupLayout()
     samplersBindGroupLayout = wgpuDeviceCreateBindGroupLayout(device, &bindGroupLayoutDescriptor);
 }
 
+void Renderer::Impl::createSettingsBindGroupLayout()
+{
+    WGPUBindGroupLayoutEntry entries[1] = {};
+
+    entries[0].binding = 0;
+    entries[0].visibility = WGPUShaderStage_Vertex | WGPUShaderStage_Fragment;
+    entries[0].buffer.type = WGPUBufferBindingType_Uniform;
+    entries[0].buffer.hasDynamicOffset = 0;
+    entries[0].buffer.minBindingSize = sizeof(ViewSettings);
+
+    WGPUBindGroupLayoutDescriptor bindGroupLayoutDescriptor = {};
+    bindGroupLayoutDescriptor.entries = entries;
+    bindGroupLayoutDescriptor.entryCount = std::size(entries);
+
+    settingsBindGroupLayout = wgpuDeviceCreateBindGroupLayout(device, &bindGroupLayoutDescriptor);
+}
+
 void Renderer::Impl::createSamplers()
 {
     WGPUSamplerDescriptor samplerDescriptor = {};
@@ -206,6 +252,33 @@ void Renderer::Impl::createSamplersBindGroup()
     samplersBindGroup = wgpuDeviceCreateBindGroup(device, &bindGroupDescriptor);
 }
 
+void Renderer::Impl::createSettingsUniformBuffer()
+{
+    WGPUBufferDescriptor bufferDescriptor = {};
+    bufferDescriptor.usage = WGPUBufferUsage_CopyDst | WGPUBufferUsage_Uniform;
+    bufferDescriptor.size = sizeof(ViewSettings);
+    bufferDescriptor.mappedAtCreation = 0;
+
+    settingsUniformBuffer = wgpuDeviceCreateBuffer(device, &bufferDescriptor);
+}
+
+void Renderer::Impl::createSettingsBindGroup()
+{
+    WGPUBindGroupEntry entries[1] = {};
+
+    entries[0].binding = 0;
+    entries[0].buffer = settingsUniformBuffer;
+    entries[0].offset = 0;
+    entries[0].size = sizeof(ViewSettings);
+
+    WGPUBindGroupDescriptor bindGroupDescriptor = {};
+    bindGroupDescriptor.layout = settingsBindGroupLayout;
+    bindGroupDescriptor.entryCount = std::size(entries);
+    bindGroupDescriptor.entries = entries;
+
+    settingsBindGroup = wgpuDeviceCreateBindGroup(device, &bindGroupDescriptor);
+}
+
 void Renderer::Impl::recreateBuffersBindGroup()
 {
     if (buffersBindGroup) wgpuBindGroupRelease(buffersBindGroup);
@@ -231,6 +304,7 @@ void Renderer::Impl::recreateDrawBedWaterPipeline()
     {
         buffersBindGroupLayout,
         samplersBindGroupLayout,
+        settingsBindGroupLayout,
     };
 
     WGPUPipelineLayoutDescriptor pipelineLayoutDescriptor = {};
@@ -253,7 +327,7 @@ void Renderer::Impl::recreateDrawBedWaterPipeline()
     renderPipelineDescriptor.layout = pipelineLayout;
     renderPipelineDescriptor.vertex.module = shaderModule;
     renderPipelineDescriptor.vertex.entryPoint = "drawBedWaterVertexMain";
-    renderPipelineDescriptor.primitive.topology = WGPUPrimitiveTopology_TriangleList;
+    renderPipelineDescriptor.primitive.topology = WGPUPrimitiveTopology_TriangleStrip;
     renderPipelineDescriptor.primitive.stripIndexFormat = WGPUIndexFormat_Undefined;
     renderPipelineDescriptor.primitive.frontFace = WGPUFrontFace_CCW;
     renderPipelineDescriptor.primitive.cullMode = WGPUCullMode_None;
@@ -262,6 +336,11 @@ void Renderer::Impl::recreateDrawBedWaterPipeline()
     renderPipelineDescriptor.fragment = &fragmentState;
 
     drawBedWaterPipeline = wgpuDeviceCreateRenderPipeline(device, &renderPipelineDescriptor);
+}
+
+void Renderer::Impl::updateSettingsBuffer(ViewSettings const & viewSettings)
+{
+    wgpuQueueWriteBuffer(queue, settingsUniformBuffer, 0, &viewSettings, sizeof(viewSettings));
 }
 
 Renderer::Renderer(WGPUDevice device, WGPUTextureFormat surfaceFormat)
@@ -275,7 +354,7 @@ void Renderer::update(SimulationBuffers const & simulationBuffers)
     pimpl_->update(simulationBuffers);
 }
 
-void Renderer::render(WGPUTextureView target)
+void Renderer::render(WGPUTextureView target, ViewSettings const & viewSettings)
 {
-    pimpl_->render(target);
+    pimpl_->render(target, viewSettings);
 }

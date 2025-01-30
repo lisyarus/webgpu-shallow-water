@@ -20,6 +20,10 @@ struct Application
     WGPUQueue queue();
     WGPUTextureFormat surfaceFormat();
 
+    int width();
+    int height();
+    float aspectRatio();
+
 private:
     SDL_Window * window_ = nullptr;
     int width_ = 1024;

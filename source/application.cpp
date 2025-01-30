@@ -253,6 +253,21 @@ WGPUTextureFormat Application::surfaceFormat()
     return surfaceFormat_;
 }
 
+int Application::width()
+{
+    return width_;
+}
+
+int Application::height()
+{
+    return height_;
+}
+
+float Application::aspectRatio()
+{
+    return width_ * 1.f / height_;
+}
+
 void Application::onResize()
 {
     // Reconfigure the surface for the new size

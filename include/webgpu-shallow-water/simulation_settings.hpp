@@ -3,7 +3,7 @@
 struct SimulationSettings
 {
     unsigned int cellsX = 256;
-    unsigned int cellsY = 128;
+    unsigned int cellsY = 256;
 
     void createUI();
 };

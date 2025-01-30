@@ -1,6 +1,7 @@
 #pragma once
 
 #include <webgpu-shallow-water/simulation_buffers.hpp>
+#include <webgpu-shallow-water/view_settings.hpp>
 
 #include <webgpu/webgpu.h>
 
@@ -12,7 +13,7 @@ struct Renderer
     ~Renderer();
 
     void update(SimulationBuffers const & simulationBuffers);
-    void render(WGPUTextureView target);
+    void render(WGPUTextureView target, ViewSettings const & viewSettings);
 
 private:
     struct Impl;
