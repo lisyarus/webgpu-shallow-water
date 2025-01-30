@@ -9,6 +9,8 @@ struct InteractionSettings
 {
     mode : u32,
     radius : f32,
+    force : f32,
+    dt : f32,
     oldPosition : vec2f,
     position : vec2f,
 }
@@ -49,7 +51,7 @@ fn interact(@builtin(global_invocation_id) id: vec3<u32>)
     let position = vec2f(id.xy) + vec2f(0.5);
     let distance = pointToSegmentDistance(position, interactionSettings.oldPosition, interactionSettings.position);
 
-    let delta = smoothstep(interactionSettings.radius + 2.0, interactionSettings.radius - 2.0, distance);
+    let delta = pow(128.0, interactionSettings.force) * interactionSettings.force * interactionSettings.dt * smoothstep(interactionSettings.radius, interactionSettings.radius * interactionSettings.force - 1.0, distance);
 
     var value = textureLoad(bedWaterTexture, id.xy);
 
@@ -72,6 +74,7 @@ namespace
     struct InteractionSettingsUniform
     {
         InteractionSettings settings;
+        float dt;
         Vector2f oldPosition;
         Vector2f position;
     };
@@ -146,6 +149,7 @@ void Simulator::Impl::interact(float dt, InteractionSettings const & settings, V
     InteractionSettingsUniform interactionSettingsUniform
     {
         .settings = settings,
+        .dt = dt,
         .oldPosition = oldPosition,
         .position = position,
     };
