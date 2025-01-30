@@ -29,7 +29,7 @@ void Camera::update(float dt, int cellsX, int cellsY, float aspectRatio)
     viewExtentY_ += (viewExtentYTarget_ - viewExtentY_) * smoothnessFactor;
 }
 
-Matrix4f Camera::viewMatrix()
+Matrix4f Camera::viewMatrix() const
 {
     // Column-major
     return {
@@ -37,6 +37,14 @@ Matrix4f Camera::viewMatrix()
         0.f, 1.f / viewExtentY_, 0.f, 0.f,
         0.f, 0.f, 1.f, 0.f,
         - viewCenterX_ / viewExtentX_, - viewCenterY_ / viewExtentY_, 0.f, 1.f,
+    };
+}
+
+Vector2f Camera::ndcToWorld(Vector2f const & point) const
+{
+    return {
+        .x = viewCenterX_ + point.x * viewExtentX_,
+        .y = viewCenterY_ + point.y * viewExtentY_,
     };
 }
 

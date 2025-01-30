@@ -156,6 +156,8 @@ void Application::pollEvents()
 {
     for (SDL_Event event; SDL_PollEvent(&event);)
     {
+        ImGui_ImplSDL2_ProcessEvent(&event);
+
         if (event.type == SDL_QUIT)
             running_ = false;
 
@@ -167,7 +169,18 @@ void Application::pollEvents()
                 onResize();
             }
 
-        ImGui_ImplSDL2_ProcessEvent(&event);
+        bool mouseCaptured = ImGui::GetIO().WantCaptureMouse;
+
+        if (event.type == SDL_MOUSEMOTION)
+            mousePosition_ = {(float)event.motion.x, (float)event.motion.y};
+
+        if (event.type == SDL_MOUSEBUTTONDOWN && !mouseCaptured)
+            if (event.button.button == SDL_BUTTON_LEFT)
+                mouseDown_ = true;
+
+        if (event.type == SDL_MOUSEBUTTONUP)
+            if (event.button.button == SDL_BUTTON_LEFT)
+                mouseDown_ = false;
     }
 }
 
@@ -238,34 +251,44 @@ void Application::present()
     wgpuSurfacePresent(surface_);
 }
 
-WGPUDevice Application::device()
+WGPUDevice Application::device() const
 {
     return device_;
 }
 
-WGPUQueue Application::queue()
+WGPUQueue Application::queue() const
 {
     return queue_;
 }
 
-WGPUTextureFormat Application::surfaceFormat()
+WGPUTextureFormat Application::surfaceFormat() const
 {
     return surfaceFormat_;
 }
 
-int Application::width()
+int Application::width() const
 {
     return width_;
 }
 
-int Application::height()
+int Application::height() const
 {
     return height_;
 }
 
-float Application::aspectRatio()
+float Application::aspectRatio() const
 {
     return width_ * 1.f / height_;
+}
+
+Vector2f Application::mousePosition() const
+{
+    return mousePosition_;
+}
+
+bool Application::mouseDown() const
+{
+    return mouseDown_;
 }
 
 void Application::onResize()

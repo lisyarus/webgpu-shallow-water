@@ -1,5 +1,7 @@
 #pragma once
 
+#include <webgpu-shallow-water/vector.hpp>
+
 #include <imgui.h>
 
 #include <SDL2/SDL_video.h>
@@ -16,13 +18,16 @@ struct Application
     void drawUI(WGPUTextureView target);
     void present();
 
-    WGPUDevice device();
-    WGPUQueue queue();
-    WGPUTextureFormat surfaceFormat();
+    WGPUDevice device() const;
+    WGPUQueue queue() const;
+    WGPUTextureFormat surfaceFormat() const;
 
-    int width();
-    int height();
-    float aspectRatio();
+    int width() const;
+    int height() const;
+    float aspectRatio() const;
+
+    Vector2f mousePosition() const;
+    bool mouseDown() const;
 
 private:
     SDL_Window * window_ = nullptr;
@@ -37,6 +42,8 @@ private:
     ImGuiContext * imguiContext_ = nullptr;
 
     bool running_ = true;
+    Vector2f mousePosition_ = {0.f, 0.f};
+    bool mouseDown_ = false;
 
     void onResize();
 };

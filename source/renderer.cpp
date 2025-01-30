@@ -44,8 +44,9 @@ fn drawBedWaterVertexMain(@builtin(vertex_index) index : u32) -> VertexOut
 @fragment
 fn drawBedWaterFragmentMain(in : VertexOut) -> @location(0) vec4f
 {
-    return vec4f(in.texcoord, 0.0, 1.0);
-    // return textureSampleLevel(bedWaterTexture, linearSampler, in.texcoord, 0.0);
+    let bedWaterSample = textureSampleLevel(bedWaterTexture, linearSampler, in.texcoord, 0.0).xy;
+
+    return vec4f(vec3f(bedWaterSample.x), 1.0);
 }
 
 )";

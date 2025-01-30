@@ -1,5 +1,6 @@
 #pragma once
 
+#include <webgpu-shallow-water/vector.hpp>
 #include <webgpu-shallow-water/matrix.hpp>
 
 struct Camera
@@ -8,7 +9,9 @@ struct Camera
 
     void update(float dt, int cellsX, int cellsY, float aspectRatio);
 
-    Matrix4f viewMatrix();
+    Matrix4f viewMatrix() const;
+
+    Vector2f ndcToWorld(Vector2f const & point) const;
 
 private:
     float viewCenterX_;
