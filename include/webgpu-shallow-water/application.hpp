@@ -12,7 +12,7 @@ struct Application
 
     bool running();
     void pollEvents();
-    WGPUTexture newFrame();
+    WGPUTextureView newFrame();
     void drawUI(WGPUTextureView target);
     void present();
 

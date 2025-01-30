@@ -78,13 +78,14 @@ Application::Application()
     WGPURequiredLimits requiredLimits = {};
     requiredLimits.limits = supportedLimits.limits;
 
-    WGPUFeatureName requiredFeatures[1]
+    WGPUFeatureName requiredFeatures[2]
     {
         WGPUFeatureName_Float32Filterable,
+        (WGPUFeatureName)WGPUNativeFeature_TextureAdapterSpecificFormatFeatures,
     };
 
     WGPUDeviceDescriptor deviceDescriptor = {};
-    deviceDescriptor.requiredFeatureCount = 1;
+    deviceDescriptor.requiredFeatureCount = std::size(requiredFeatures);
     deviceDescriptor.requiredFeatures = requiredFeatures;
     deviceDescriptor.requiredLimits = &requiredLimits;
 
@@ -170,7 +171,7 @@ void Application::pollEvents()
     }
 }
 
-WGPUTexture Application::newFrame()
+WGPUTextureView Application::newFrame()
 {
     ImGui_ImplSDL2_NewFrame();
     ImGui_ImplWGPU_NewFrame();
@@ -194,7 +195,16 @@ WGPUTexture Application::newFrame()
     if (surfaceTexture.status != WGPUSurfaceGetCurrentTextureStatus_Success)
         throw std::runtime_error(std::format("Can't get surface texture: {}", (int)surfaceTexture.status));
 
-    return surfaceTexture.texture;
+    WGPUTextureViewDescriptor surfaceTextureViewDescriptor = {};
+    surfaceTextureViewDescriptor.format = surfaceFormat_;
+    surfaceTextureViewDescriptor.dimension = WGPUTextureViewDimension_2D;
+    surfaceTextureViewDescriptor.baseMipLevel = 0;
+    surfaceTextureViewDescriptor.mipLevelCount = 1;
+    surfaceTextureViewDescriptor.baseArrayLayer = 0;
+    surfaceTextureViewDescriptor.arrayLayerCount = 1;
+    surfaceTextureViewDescriptor.aspect = WGPUTextureAspect_All;
+
+    return wgpuTextureCreateView(surfaceTexture.texture, &surfaceTextureViewDescriptor);
 }
 
 void Application::drawUI(WGPUTextureView target)
