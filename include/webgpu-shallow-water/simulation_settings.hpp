@@ -2,6 +2,7 @@
 
 struct SimulationSettings
 {
+    bool paused = false;
     unsigned int cellsX = 256;
     unsigned int cellsY = 256;
     float dt = 0.2f;

@@ -6,6 +6,9 @@
 
 void SimulationSettings::createUI()
 {
+    if (ImGui::Button(paused ? "Paused" : "Running"))
+        paused ^= true;
+
     const int cellsStep = 32;
     const int cellsMax = 1024;
 

@@ -313,6 +313,9 @@ void Simulator::Impl::step(SimulationSettings const & settings)
         recreateBuffersBindGroup();
     }
 
+    if (settings.paused)
+        return;
+
     SimulationSettingsUniform settingsUniform
     {
         .cellsX = settings.cellsX,
