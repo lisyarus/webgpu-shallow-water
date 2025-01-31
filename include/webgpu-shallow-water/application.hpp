@@ -18,6 +18,8 @@ struct Application
     void drawUI(WGPUTextureView target);
     void present();
 
+    void createUI();
+
     WGPUDevice device() const;
     WGPUQueue queue() const;
     WGPUTextureFormat surfaceFormat() const;
@@ -33,6 +35,9 @@ private:
     SDL_Window * window_ = nullptr;
     int width_ = 1024;
     int height_ = 576;
+
+    bool vsync_ = true;
+    bool needUpdateSurface_ = false;
 
     WGPUSurface surface_ = nullptr;
     WGPUDevice device_ = nullptr;

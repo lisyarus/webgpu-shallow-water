@@ -39,6 +39,8 @@ int main()
             continue;
 
         ImGui::Begin("Settings", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
+        ImGui::SeparatorText("Application");
+        application.createUI();
         ImGui::SeparatorText("Simulation");
         simulationSettings.createUI();
         ImGui::SeparatorText("Interaction");

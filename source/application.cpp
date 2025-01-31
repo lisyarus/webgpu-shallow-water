@@ -186,6 +186,12 @@ void Application::pollEvents()
 
 WGPUTextureView Application::newFrame()
 {
+    if (needUpdateSurface_)
+    {
+        onResize();
+        needUpdateSurface_ = false;
+    }
+
     WGPUSurfaceTexture surfaceTexture;
     wgpuSurfaceGetCurrentTexture(surface_, &surfaceTexture);
 
@@ -251,6 +257,12 @@ void Application::present()
     wgpuSurfacePresent(surface_);
 }
 
+void Application::createUI()
+{
+    if (ImGui::Checkbox("VSync", &vsync_))
+        needUpdateSurface_ = true;
+}
+
 WGPUDevice Application::device() const
 {
     return device_;
@@ -304,7 +316,7 @@ void Application::onResize()
     surfaceConfiguration.alphaMode = WGPUCompositeAlphaMode_Auto;
     surfaceConfiguration.width = width_;
     surfaceConfiguration.height = height_;
-    surfaceConfiguration.presentMode = WGPUPresentMode_Fifo;
+    surfaceConfiguration.presentMode = vsync_ ? WGPUPresentMode_Fifo : WGPUPresentMode_Immediate;
 
     wgpuSurfaceConfigure(surface_, &surfaceConfiguration);
 
