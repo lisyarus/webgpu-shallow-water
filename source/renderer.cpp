@@ -46,7 +46,10 @@ fn drawBedWaterFragmentMain(in : VertexOut) -> @location(0) vec4f
 {
     let bedWaterSample = textureSampleLevel(bedWaterTexture, linearSampler, in.texcoord, 0.0).xy;
 
-    let color = mix(vec3f(bedWaterSample.x), vec3f(0.0, 0.25, 1.0), 1.0 - exp(-bedWaterSample.y));
+    let bedFactor = 1.0 - exp(- 0.5 * bedWaterSample.x);
+    let waterFactor = 1.0 - exp(- bedWaterSample.y);
+
+    let color = mix(vec3f(bedFactor), vec3f(0.0, 0.25, 1.0), waterFactor);
 
     return vec4f(color, 1.0);
 }
