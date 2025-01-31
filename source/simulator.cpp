@@ -28,6 +28,7 @@ struct SimulationSettings
 @group(0) @binding(0) var bedWaterTexture : texture_storage_2d<rg32float, read_write>;
 @group(0) @binding(1) var flowXTexture : texture_storage_2d<r32float, read_write>;
 @group(0) @binding(2) var flowYTexture : texture_storage_2d<r32float, read_write>;
+@group(0) @binding(3) var velocityTexture : texture_storage_2d<rg32float, read_write>;
 
 @group(1) @binding(0) var<uniform> interactionSettings : InteractionSettings;
 @group(1) @binding(1) var<uniform> simulationSettings : SimulationSettings;
@@ -142,16 +143,27 @@ fn stepScale(@builtin(global_invocation_id) id: vec3u)
 @compute @workgroup_size(16, 16)
 fn stepMove(@builtin(global_invocation_id) id: vec3u)
 {
-    let totalFlow = 0.0
-        + textureLoad(flowXTexture, id.xy).x
-        + textureLoad(flowYTexture, id.xy).x
-        - textureLoad(flowXTexture, id.xy + vec2u(1, 0)).x
-        - textureLoad(flowYTexture, id.xy + vec2u(0, 1)).x
-        ;
+    let inFlowX = textureLoad(flowXTexture, id.xy).x;
+    let inFlowY = textureLoad(flowYTexture, id.xy).x;
+    let outFlowX = textureLoad(flowXTexture, id.xy + vec2u(1, 0)).x;
+    let outFlowY = textureLoad(flowYTexture, id.xy + vec2u(0, 1)).x;
+
+    let totalFlow = inFlowX + inFlowY - outFlowX - outFlowY;
 
     var bedWaterSample = textureLoad(bedWaterTexture, id.xy);
+    let waterOld = bedWaterSample.y;
     bedWaterSample.y += totalFlow * simulationSettings.dt / simulationSettings.dx / simulationSettings.dx;
     textureStore(bedWaterTexture, id.xy, bedWaterSample);
+
+    let waterAverage = (bedWaterSample.y + waterOld) / 2.0;
+
+    var velocity = vec2f(0.0);
+
+    if (waterAverage > 0.0) {
+        velocity = vec2f(inFlowX + outFlowX, inFlowY + outFlowY) / (2.0 * simulationSettings.dx * waterAverage);
+    }
+
+    textureStore(velocityTexture, id.xy, vec4f(velocity, 0.0, 0.0));
 }
 
 )";
@@ -207,9 +219,11 @@ struct Simulator::Impl
     WGPUTexture bedWaterTexture = nullptr;
     WGPUTexture flowXTexture = nullptr;
     WGPUTexture flowYTexture = nullptr;
+    WGPUTexture velocityTexture = nullptr;
     WGPUTextureView bedWaterTextureView = nullptr;
     WGPUTextureView flowXTextureView = nullptr;
     WGPUTextureView flowYTextureView = nullptr;
+    WGPUTextureView velocityTextureView = nullptr;
 
     Impl(WGPUDevice device);
 
@@ -370,7 +384,7 @@ void Simulator::Impl::createUniformBuffers()
 
 void Simulator::Impl::createBuffersBindGroupLayout()
 {
-    WGPUBindGroupLayoutEntry entries[3] = {};
+    WGPUBindGroupLayoutEntry entries[4] = {};
 
     entries[0].binding = 0;
     entries[0].visibility = WGPUShaderStage_Compute;
@@ -389,6 +403,12 @@ void Simulator::Impl::createBuffersBindGroupLayout()
     entries[2].storageTexture.access = WGPUStorageTextureAccess_ReadWrite;
     entries[2].storageTexture.format = WGPUTextureFormat_R32Float;
     entries[2].storageTexture.viewDimension = WGPUTextureViewDimension_2D;
+
+    entries[3].binding = 3;
+    entries[3].visibility = WGPUShaderStage_Compute;
+    entries[3].storageTexture.access = WGPUStorageTextureAccess_ReadWrite;
+    entries[3].storageTexture.format = WGPUTextureFormat_RG32Float;
+    entries[3].storageTexture.viewDimension = WGPUTextureViewDimension_2D;
 
     WGPUBindGroupLayoutDescriptor bindGroupLayoutDescriptor = {};
     bindGroupLayoutDescriptor.entries = entries;
@@ -530,15 +550,16 @@ void Simulator::Impl::recreateGridBuffers()
     if (flowYTexture) wgpuTextureRelease(flowYTexture);
     if (flowYTextureView) wgpuTextureViewRelease(flowYTextureView);
 
-    WGPUTextureDescriptor bedWaterTextureDescriptor = {};
-    bedWaterTextureDescriptor.usage = WGPUTextureUsage_StorageBinding | WGPUTextureUsage_TextureBinding;
-    bedWaterTextureDescriptor.dimension = WGPUTextureDimension_2D;
-    bedWaterTextureDescriptor.size = {cellsX, cellsY, 1};
-    bedWaterTextureDescriptor.format = WGPUTextureFormat_RG32Float;
-    bedWaterTextureDescriptor.mipLevelCount = 1;
-    bedWaterTextureDescriptor.sampleCount = 1;
+    WGPUTextureDescriptor gridTextureDescriptor = {};
+    gridTextureDescriptor.usage = WGPUTextureUsage_StorageBinding | WGPUTextureUsage_TextureBinding;
+    gridTextureDescriptor.dimension = WGPUTextureDimension_2D;
+    gridTextureDescriptor.size = {cellsX, cellsY, 1};
+    gridTextureDescriptor.format = WGPUTextureFormat_RG32Float;
+    gridTextureDescriptor.mipLevelCount = 1;
+    gridTextureDescriptor.sampleCount = 1;
 
-    bedWaterTexture = wgpuDeviceCreateTexture(device, &bedWaterTextureDescriptor);
+    bedWaterTexture = wgpuDeviceCreateTexture(device, &gridTextureDescriptor);
+    velocityTexture = wgpuDeviceCreateTexture(device, &gridTextureDescriptor);
 
     WGPUTextureDescriptor flowTextureDescriptor = {};
     flowTextureDescriptor.usage = WGPUTextureUsage_StorageBinding | WGPUTextureUsage_TextureBinding;
@@ -551,16 +572,17 @@ void Simulator::Impl::recreateGridBuffers()
     flowXTexture = wgpuDeviceCreateTexture(device, &flowTextureDescriptor);
     flowYTexture = wgpuDeviceCreateTexture(device, &flowTextureDescriptor);
 
-    WGPUTextureViewDescriptor bedWaterTextureViewDescriptor = {};
-    bedWaterTextureViewDescriptor.format = WGPUTextureFormat_RG32Float;
-    bedWaterTextureViewDescriptor.dimension = WGPUTextureViewDimension_2D;
-    bedWaterTextureViewDescriptor.baseMipLevel = 0;
-    bedWaterTextureViewDescriptor.mipLevelCount = 1;
-    bedWaterTextureViewDescriptor.baseArrayLayer = 0;
-    bedWaterTextureViewDescriptor.arrayLayerCount = 1;
-    bedWaterTextureViewDescriptor.aspect = WGPUTextureAspect_All;
+    WGPUTextureViewDescriptor gridTextureViewDescriptor = {};
+    gridTextureViewDescriptor.format = WGPUTextureFormat_RG32Float;
+    gridTextureViewDescriptor.dimension = WGPUTextureViewDimension_2D;
+    gridTextureViewDescriptor.baseMipLevel = 0;
+    gridTextureViewDescriptor.mipLevelCount = 1;
+    gridTextureViewDescriptor.baseArrayLayer = 0;
+    gridTextureViewDescriptor.arrayLayerCount = 1;
+    gridTextureViewDescriptor.aspect = WGPUTextureAspect_All;
 
-    bedWaterTextureView = wgpuTextureCreateView(bedWaterTexture, &bedWaterTextureViewDescriptor);
+    bedWaterTextureView = wgpuTextureCreateView(bedWaterTexture, &gridTextureViewDescriptor);
+    velocityTextureView = wgpuTextureCreateView(velocityTexture, &gridTextureViewDescriptor);
 
     WGPUTextureViewDescriptor flowTextureViewDescriptor = {};
     flowTextureViewDescriptor.format = WGPUTextureFormat_R32Float;
@@ -581,7 +603,7 @@ void Simulator::Impl::recreateBuffersBindGroup()
 {
     if (buffersBindGroup) wgpuBindGroupRelease(buffersBindGroup);
 
-    WGPUBindGroupEntry entries[3] = {};
+    WGPUBindGroupEntry entries[4] = {};
 
     entries[0].binding = 0;
     entries[0].textureView = bedWaterTextureView;
@@ -591,6 +613,9 @@ void Simulator::Impl::recreateBuffersBindGroup()
 
     entries[2].binding = 2;
     entries[2].textureView = flowYTextureView;
+
+    entries[3].binding = 3;
+    entries[3].textureView = velocityTextureView;
 
     WGPUBindGroupDescriptor bindGroupDescriptor = {};
     bindGroupDescriptor.layout = buffersBindGroupLayout;
@@ -620,5 +645,6 @@ SimulationBuffers Simulator::buffers()
 {
     return {
         .bedWaterTextureView = pimpl_->bedWaterTextureView,
+        .velocityTextureView = pimpl_->velocityTextureView,
     };
 }

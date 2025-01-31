@@ -10,6 +10,7 @@ struct ViewSettings
 }
 
 @group(0) @binding(0) var bedWaterTexture : texture_2d<f32>;
+@group(0) @binding(1) var velocityTexture : texture_2d<f32>;
 
 @group(1) @binding(0) var linearSampler : sampler;
 
@@ -180,13 +181,19 @@ void Renderer::Impl::createShaderModule()
 
 void Renderer::Impl::createBuffersBindGroupLayout()
 {
-    WGPUBindGroupLayoutEntry entries[1] = {};
+    WGPUBindGroupLayoutEntry entries[2] = {};
 
     entries[0].binding = 0;
     entries[0].visibility = WGPUShaderStage_Fragment;
     entries[0].texture.sampleType = WGPUTextureSampleType_Float;
     entries[0].texture.viewDimension = WGPUTextureViewDimension_2D;
     entries[0].texture.multisampled = 0;
+
+    entries[1].binding = 1;
+    entries[1].visibility = WGPUShaderStage_Fragment;
+    entries[1].texture.sampleType = WGPUTextureSampleType_Float;
+    entries[1].texture.viewDimension = WGPUTextureViewDimension_2D;
+    entries[1].texture.multisampled = 0;
 
     WGPUBindGroupLayoutDescriptor bindGroupLayoutDescriptor = {};
     bindGroupLayoutDescriptor.entries = entries;
@@ -289,10 +296,13 @@ void Renderer::Impl::recreateBuffersBindGroup()
 {
     if (buffersBindGroup) wgpuBindGroupRelease(buffersBindGroup);
 
-    WGPUBindGroupEntry entries[1] = {};
+    WGPUBindGroupEntry entries[2] = {};
 
     entries[0].binding = 0;
     entries[0].textureView = simulationBuffers.bedWaterTextureView;
+
+    entries[1].binding = 1;
+    entries[1].textureView = simulationBuffers.velocityTextureView;
 
     WGPUBindGroupDescriptor bindGroupDescriptor = {};
     bindGroupDescriptor.layout = buffersBindGroupLayout;
