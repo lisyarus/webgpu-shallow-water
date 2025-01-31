@@ -5,6 +5,6 @@
 struct alignas(16) ViewSettings
 {
     Matrix4f viewMatrix;
-    float simulationSizeX;
-    float simulationSizeY;
+    unsigned int cellsX;
+    unsigned int cellsY;
 };

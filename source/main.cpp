@@ -73,8 +73,8 @@ int main()
         ViewSettings viewSettings
         {
             .viewMatrix = camera.viewMatrix(),
-            .simulationSizeX = (float)simulationSettings.cellsX,
-            .simulationSizeY = (float)simulationSettings.cellsY,
+            .cellsX = simulationSettings.cellsX,
+            .cellsY = simulationSettings.cellsY,
         };
 
         renderer.update(simulator.buffers());
