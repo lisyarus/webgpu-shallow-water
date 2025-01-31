@@ -29,7 +29,7 @@ fn drawBedWaterVertexMain(@builtin(vertex_index) index : u32) -> VertexOut
         texcoord = vec2f(0.0);
     } else if (index == 1u) {
         texcoord = vec2f(1.0, 0.0);
-    } else if (index == 2u ){
+    } else if (index == 2u){
         texcoord = vec2f(0.0, 1.0);
     } else {
         texcoord = vec2f(1.0, 1.0);
@@ -46,7 +46,9 @@ fn drawBedWaterFragmentMain(in : VertexOut) -> @location(0) vec4f
 {
     let bedWaterSample = textureSampleLevel(bedWaterTexture, linearSampler, in.texcoord, 0.0).xy;
 
-    return vec4f(vec3f(bedWaterSample.x), 1.0);
+    let color = mix(vec3f(bedWaterSample.x), vec3f(0.0, 0.25, 1.0), 1.0 - exp(-bedWaterSample.y));
+
+    return vec4f(color, 1.0);
 }
 
 )";

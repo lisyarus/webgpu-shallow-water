@@ -59,9 +59,14 @@ fn interact(@builtin(global_invocation_id) id: vec3<u32>)
         value.x += delta;
     } else if (interactionSettings.mode == 2u) {
         value.x -= delta;
+    } else if (interactionSettings.mode == 3u) {
+        value.y += delta;
+    } else if (interactionSettings.mode == 4u) {
+        value.y -= delta;
     }
 
     value.x = max(0.0, min(1.0, value.x));
+    value.y = max(0.0, value.y);
 
     textureStore(bedWaterTexture, id.xy, value);
 }

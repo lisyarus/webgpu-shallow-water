@@ -12,6 +12,8 @@ void InteractionSettings::createUI()
         "None",
         "Add bed",
         "Remove bed",
+        "Add water",
+        "Remove water",
     };
 
     ImGui::Combo("Action", (int *)&mode, modeNames, std::size(modeNames));

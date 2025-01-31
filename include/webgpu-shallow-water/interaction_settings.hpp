@@ -5,6 +5,8 @@ enum class InteractionMode : int
     None,
     AddBed,
     RemoveBed,
+    AddWater,
+    RemoveWater,
 };
 
 struct InteractionSettings
