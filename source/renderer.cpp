@@ -228,8 +228,8 @@ void Renderer::Impl::createSamplers()
     samplerDescriptor.addressModeU = WGPUAddressMode_ClampToEdge;
     samplerDescriptor.addressModeV = WGPUAddressMode_ClampToEdge;
     samplerDescriptor.addressModeW = WGPUAddressMode_ClampToEdge;
-    samplerDescriptor.magFilter = WGPUFilterMode_Nearest;
-    samplerDescriptor.minFilter = WGPUFilterMode_Nearest;
+    samplerDescriptor.magFilter = WGPUFilterMode_Linear;
+    samplerDescriptor.minFilter = WGPUFilterMode_Linear;
     samplerDescriptor.mipmapFilter = WGPUMipmapFilterMode_Nearest;
     samplerDescriptor.lodMinClamp = 0.f;
     samplerDescriptor.lodMaxClamp = 0.f;
