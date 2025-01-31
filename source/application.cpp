@@ -186,10 +186,6 @@ void Application::pollEvents()
 
 WGPUTextureView Application::newFrame()
 {
-    ImGui_ImplSDL2_NewFrame();
-    ImGui_ImplWGPU_NewFrame();
-    ImGui::NewFrame();
-
     WGPUSurfaceTexture surfaceTexture;
     wgpuSurfaceGetCurrentTexture(surface_, &surfaceTexture);
 
@@ -207,6 +203,10 @@ WGPUTextureView Application::newFrame()
 
     if (surfaceTexture.status != WGPUSurfaceGetCurrentTextureStatus_Success)
         throw std::runtime_error(std::format("Can't get surface texture: {}", (int)surfaceTexture.status));
+
+    ImGui_ImplSDL2_NewFrame();
+    ImGui_ImplWGPU_NewFrame();
+    ImGui::NewFrame();
 
     WGPUTextureViewDescriptor surfaceTextureViewDescriptor = {};
     surfaceTextureViewDescriptor.format = surfaceFormat_;

@@ -35,6 +35,9 @@ int main()
 
         auto surfaceTextureView = application.newFrame();
 
+        if (!surfaceTextureView)
+            continue;
+
         ImGui::Begin("Settings", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
         ImGui::SeparatorText("Simulation");
         simulationSettings.createUI();
