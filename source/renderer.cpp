@@ -101,6 +101,18 @@ fn drawVelocityFragmentMain(in : VelocityVertexOut) -> @location(0) vec4f
 
 )";
 
+namespace
+{
+
+    struct alignas(16) ViewSettingsUniform
+    {
+        Matrix4f viewMatrix;
+        unsigned int cellsX;
+        unsigned int cellsY;
+    };
+
+}
+
 struct Renderer::Impl
 {
     WGPUDevice device = nullptr;
@@ -206,8 +218,11 @@ void Renderer::Impl::render(WGPUTextureView target, ViewSettings const & viewSet
     wgpuRenderPassEncoderSetPipeline(renderPassEncoder, drawBedWaterPipeline);
     wgpuRenderPassEncoderDraw(renderPassEncoder, 4, 1, 0, 0);
 
-    wgpuRenderPassEncoderSetPipeline(renderPassEncoder, drawVelocityPipeline);
-    wgpuRenderPassEncoderDraw(renderPassEncoder, viewSettings.cellsX * viewSettings.cellsY * 3, 1, 0, 0);
+    if (viewSettings.showVelocity)
+    {
+        wgpuRenderPassEncoderSetPipeline(renderPassEncoder, drawVelocityPipeline);
+        wgpuRenderPassEncoderDraw(renderPassEncoder, viewSettings.cellsX * viewSettings.cellsY * 3, 1, 0, 0);
+    }
 
     wgpuRenderPassEncoderEnd(renderPassEncoder);
 
@@ -276,7 +291,7 @@ void Renderer::Impl::createSettingsBindGroupLayout()
     entries[0].visibility = WGPUShaderStage_Vertex | WGPUShaderStage_Fragment;
     entries[0].buffer.type = WGPUBufferBindingType_Uniform;
     entries[0].buffer.hasDynamicOffset = 0;
-    entries[0].buffer.minBindingSize = sizeof(ViewSettings);
+    entries[0].buffer.minBindingSize = sizeof(ViewSettingsUniform);
 
     WGPUBindGroupLayoutDescriptor bindGroupLayoutDescriptor = {};
     bindGroupLayoutDescriptor.entries = entries;
@@ -320,7 +335,7 @@ void Renderer::Impl::createSettingsUniformBuffer()
 {
     WGPUBufferDescriptor bufferDescriptor = {};
     bufferDescriptor.usage = WGPUBufferUsage_CopyDst | WGPUBufferUsage_Uniform;
-    bufferDescriptor.size = sizeof(ViewSettings);
+    bufferDescriptor.size = sizeof(ViewSettingsUniform);
     bufferDescriptor.mappedAtCreation = 0;
 
     settingsUniformBuffer = wgpuDeviceCreateBuffer(device, &bufferDescriptor);
@@ -333,7 +348,7 @@ void Renderer::Impl::createSettingsBindGroup()
     entries[0].binding = 0;
     entries[0].buffer = settingsUniformBuffer;
     entries[0].offset = 0;
-    entries[0].size = sizeof(ViewSettings);
+    entries[0].size = sizeof(ViewSettingsUniform);
 
     WGPUBindGroupDescriptor bindGroupDescriptor = {};
     bindGroupDescriptor.layout = settingsBindGroupLayout;
@@ -449,7 +464,11 @@ void Renderer::Impl::recreateDrawVelocityPipeline()
 
 void Renderer::Impl::updateSettingsBuffer(ViewSettings const & viewSettings)
 {
-    wgpuQueueWriteBuffer(queue, settingsUniformBuffer, 0, &viewSettings, sizeof(viewSettings));
+    ViewSettingsUniform viewSettingsUniform;
+    viewSettingsUniform.viewMatrix = viewSettings.viewMatrix;
+    viewSettingsUniform.cellsX = viewSettings.cellsX;
+    viewSettingsUniform.cellsY = viewSettings.cellsY;
+    wgpuQueueWriteBuffer(queue, settingsUniformBuffer, 0, &viewSettingsUniform, sizeof(viewSettingsUniform));
 }
 
 Renderer::Renderer(WGPUDevice device, WGPUTextureFormat surfaceFormat)

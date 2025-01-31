@@ -2,9 +2,13 @@
 
 #include <webgpu-shallow-water/matrix.hpp>
 
-struct alignas(16) ViewSettings
+struct ViewSettings
 {
     Matrix4f viewMatrix;
     unsigned int cellsX;
     unsigned int cellsY;
+
+    bool showVelocity = false;
+
+    void createUI();
 };

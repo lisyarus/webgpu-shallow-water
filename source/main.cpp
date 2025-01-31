@@ -15,6 +15,8 @@ int main()
     SimulationSettings simulationSettings;
     InteractionSettings interactionSettings;
 
+    ViewSettings viewSettings;
+
     Simulator simulator(application.device());
 
     Renderer renderer(application.device(), application.surfaceFormat());
@@ -45,6 +47,8 @@ int main()
         simulationSettings.createUI();
         ImGui::SeparatorText("Interaction");
         interactionSettings.createUI();
+        ImGui::SeparatorText("View");
+        viewSettings.createUI();
         ImGui::End();
 
         camera.update(frameDt, simulationSettings.cellsX, simulationSettings.cellsY, application.aspectRatio());
@@ -70,12 +74,9 @@ int main()
 
         simulator.step(simulationSettings);
 
-        ViewSettings viewSettings
-        {
-            .viewMatrix = camera.viewMatrix(),
-            .cellsX = simulationSettings.cellsX,
-            .cellsY = simulationSettings.cellsY,
-        };
+        viewSettings.viewMatrix = camera.viewMatrix();
+        viewSettings.cellsX = simulationSettings.cellsX;
+        viewSettings.cellsY = simulationSettings.cellsY;
 
         renderer.update(simulator.buffers());
         renderer.render(surfaceTextureView, viewSettings);
