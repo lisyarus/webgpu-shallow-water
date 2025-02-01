@@ -186,7 +186,7 @@ fn drawActionFragmentMain(in : ActionVertexOut) -> @location(0) vec4f
 {
     let l = length(in.worldPosition - viewSettings.actionPosition) - viewSettings.actionRadius;
 
-    let eps = length(vec2f(dpdx(l), dpdy(l))) / sqrt(2.0);
+    let eps = length(vec2f(dpdx(l), dpdy(l)));
     let alpha = smoothstep(2.0 * eps, eps, l) * smoothstep(- 2.0 * eps, - eps, l);
     let shadowAlpha = smoothstep(8.0 * eps, 0.0, l) * smoothstep(- 8.0 * eps, 0.0, l);
 
