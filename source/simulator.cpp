@@ -187,11 +187,10 @@ struct RNGState
 
 fn randomUint(state : ptr<function, RNGState>) -> u32
 {
-    // 32-bit xor-shift
     var x = (*state).state;
-    x ^= x << 13;
-    x ^= x >> 17;
-    x ^= x << 5;
+    x = x * 747796405u + 2891336453u;
+    let y = ((x >> ((x >> 28u) + 4u)) ^ x) * 277803737u;
+    x = (y >> 22u) ^ y;
     (*state).state = x;
     return x;
 }
