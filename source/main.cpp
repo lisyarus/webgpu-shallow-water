@@ -49,19 +49,25 @@ int main()
 
         camera.update(frameDt, simulationSettings.cellsX, simulationSettings.cellsY, application.aspectRatio());
 
+        viewSettings.action = std::nullopt;
+
+        Vector2f mouse = application.mousePosition();
+        mouse.x = 2.f * mouse.x / application.width() - 1.f;
+        mouse.y = 1.f - 2.f * mouse.y / application.height();
+        mouse = camera.ndcToWorld(mouse);
+
+        if (interactionSettings.mode != InteractionMode::None)
+            viewSettings.action = {mouse, interactionSettings.radius};
+
         if (application.mouseDown())
         {
-            Vector2f mouse = application.mousePosition();
-            mouse.x = 2.f * mouse.x / application.width() - 1.f;
-            mouse.y = 1.f - 2.f * mouse.y / application.height();
-            mouse = camera.ndcToWorld(mouse);
-
             if (!oldMouse)
                 oldMouse = mouse;
 
             simulator.interact(frameDt, interactionSettings, *oldMouse, mouse);
 
             oldMouse = mouse;
+
         }
         else
         {

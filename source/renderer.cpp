@@ -7,6 +7,8 @@ struct ViewSettings
 {
     viewMatrix : mat4x4f,
     simulationSize : vec2u,
+    actionPosition : vec2f,
+    actionRadius : f32,
 }
 
 struct Particle
@@ -151,6 +153,47 @@ fn drawParticlesFragmentMain(in : ParticleVertexOut) -> @location(0) vec4f
     return vec4f(vec3f(1.0), alpha);
 }
 
+struct ActionVertexOut
+{
+    @builtin(position) position : vec4f,
+    @location(0) worldPosition : vec2f,
+}
+
+@vertex
+fn drawActionVertexMain(@builtin(vertex_index) index : u32) -> ActionVertexOut
+{
+    var texcoord = vec2f(0.0);
+    if (index == 0u) {
+        texcoord = vec2f(0.0);
+    } else if (index == 1u) {
+        texcoord = vec2f(1.0, 0.0);
+    } else if (index == 2u){
+        texcoord = vec2f(0.0, 1.0);
+    } else {
+        texcoord = vec2f(1.0, 1.0);
+    }
+
+    let worldPosition = vec2f(viewSettings.simulationSize) * texcoord;
+
+    return ActionVertexOut(
+        viewSettings.viewMatrix * vec4f(worldPosition, 0.0, 1.0),
+        worldPosition
+    );
+}
+
+@fragment
+fn drawActionFragmentMain(in : ActionVertexOut) -> @location(0) vec4f
+{
+    let l = length(in.worldPosition - viewSettings.actionPosition) - viewSettings.actionRadius;
+
+    let eps = length(vec2f(dpdx(l), dpdy(l))) / sqrt(2.0);
+    let alpha = smoothstep(2.0 * eps, eps, l) * smoothstep(- 2.0 * eps, - eps, l);
+    let shadowAlpha = smoothstep(8.0 * eps, 0.0, l) * smoothstep(- 8.0 * eps, 0.0, l);
+
+    var color = vec4f(vec3f(1.0) * alpha, shadowAlpha + alpha - shadowAlpha * alpha);
+
+    return color;
+}
 )";
 
 namespace
@@ -161,6 +204,8 @@ namespace
         Matrix4f viewMatrix;
         unsigned int cellsX;
         unsigned int cellsY;
+        Vector2f actionPosition;
+        float actionRadius;
     };
 
 }
@@ -192,6 +237,7 @@ struct Renderer::Impl
     WGPURenderPipeline drawBedWaterPipeline = nullptr;
     WGPURenderPipeline drawVelocityPipeline = nullptr;
     WGPURenderPipeline drawParticlesPipeline = nullptr;
+    WGPURenderPipeline drawActionPipeline = nullptr;
 
     Impl(WGPUDevice device, WGPUTextureFormat surfaceFormat);
 
@@ -213,6 +259,7 @@ struct Renderer::Impl
     void createDrawBedWaterPipeline();
     void createDrawVelocityPipeline();
     void createDrawParticlesPipeline();
+    void createDrawActionPipeline();
 
     void updateSettingsBuffer(ViewSettings const & viewSettings);
 };
@@ -236,6 +283,7 @@ Renderer::Impl::Impl(WGPUDevice device, WGPUTextureFormat surfaceFormat)
     createDrawBedWaterPipeline();
     createDrawVelocityPipeline();
     createDrawParticlesPipeline();
+    createDrawActionPipeline();
 }
 
 void Renderer::Impl::update(SimulationBuffers const & simulationBuffers)
@@ -284,6 +332,12 @@ void Renderer::Impl::render(WGPUTextureView target, ViewSettings const & viewSet
     {
         wgpuRenderPassEncoderSetPipeline(renderPassEncoder, drawParticlesPipeline);
         wgpuRenderPassEncoderDraw(renderPassEncoder, viewSettings.particleCount * 6, 1, 0, 0);
+    }
+
+    if (viewSettings.action)
+    {
+        wgpuRenderPassEncoderSetPipeline(renderPassEncoder, drawActionPipeline);
+        wgpuRenderPassEncoderDraw(renderPassEncoder, 4, 1, 0, 0);
     }
 
     wgpuRenderPassEncoderEnd(renderPassEncoder);
@@ -583,12 +637,63 @@ void Renderer::Impl::createDrawParticlesPipeline()
     drawParticlesPipeline = wgpuDeviceCreateRenderPipeline(device, &renderPipelineDescriptor);
 }
 
+void Renderer::Impl::createDrawActionPipeline()
+{
+    WGPUBindGroupLayout bindGroupLayouts[] =
+    {
+        buffersBindGroupLayout,
+        samplersBindGroupLayout,
+        settingsBindGroupLayout,
+    };
+
+    WGPUPipelineLayoutDescriptor pipelineLayoutDescriptor = {};
+    pipelineLayoutDescriptor.bindGroupLayoutCount = std::size(bindGroupLayouts);
+    pipelineLayoutDescriptor.bindGroupLayouts = bindGroupLayouts;
+
+    WGPUPipelineLayout pipelineLayout = wgpuDeviceCreatePipelineLayout(device, &pipelineLayoutDescriptor);
+
+    WGPUBlendState blendState = {};
+    blendState.color.operation = WGPUBlendOperation_Add;
+    blendState.color.srcFactor = WGPUBlendFactor_SrcAlpha;
+    blendState.color.dstFactor = WGPUBlendFactor_OneMinusSrcAlpha;
+    blendState.alpha.operation = WGPUBlendOperation_Add;
+    blendState.alpha.srcFactor = WGPUBlendFactor_SrcAlpha;
+    blendState.alpha.dstFactor = WGPUBlendFactor_OneMinusSrcAlpha;
+
+    WGPUColorTargetState colorTargetState = {};
+    colorTargetState.format = surfaceFormat;
+    colorTargetState.blend = &blendState;
+    colorTargetState.writeMask = WGPUColorWriteMask_All;
+
+    WGPUFragmentState fragmentState = {};
+    fragmentState.module = shaderModule;
+    fragmentState.entryPoint = "drawActionFragmentMain";
+    fragmentState.targetCount = 1;
+    fragmentState.targets = &colorTargetState;
+
+    WGPURenderPipelineDescriptor renderPipelineDescriptor = {};
+    renderPipelineDescriptor.layout = pipelineLayout;
+    renderPipelineDescriptor.vertex.module = shaderModule;
+    renderPipelineDescriptor.vertex.entryPoint = "drawActionVertexMain";
+    renderPipelineDescriptor.primitive.topology = WGPUPrimitiveTopology_TriangleStrip;
+    renderPipelineDescriptor.primitive.stripIndexFormat = WGPUIndexFormat_Undefined;
+    renderPipelineDescriptor.primitive.frontFace = WGPUFrontFace_CCW;
+    renderPipelineDescriptor.primitive.cullMode = WGPUCullMode_None;
+    renderPipelineDescriptor.multisample.count = 1;
+    renderPipelineDescriptor.multisample.mask = (unsigned int)(-1);
+    renderPipelineDescriptor.fragment = &fragmentState;
+
+    drawActionPipeline = wgpuDeviceCreateRenderPipeline(device, &renderPipelineDescriptor);
+}
+
 void Renderer::Impl::updateSettingsBuffer(ViewSettings const & viewSettings)
 {
     ViewSettingsUniform viewSettingsUniform;
     viewSettingsUniform.viewMatrix = viewSettings.viewMatrix;
     viewSettingsUniform.cellsX = viewSettings.cellsX;
     viewSettingsUniform.cellsY = viewSettings.cellsY;
+    viewSettingsUniform.actionPosition = viewSettings.action ? viewSettings.action->position : Vector2f{0.f, 0.f};
+    viewSettingsUniform.actionRadius = viewSettings.action ? viewSettings.action->radius: 0.f;
     wgpuQueueWriteBuffer(queue, settingsUniformBuffer, 0, &viewSettingsUniform, sizeof(viewSettingsUniform));
 }
 
