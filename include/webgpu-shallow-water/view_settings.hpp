@@ -10,5 +10,9 @@ struct ViewSettings
 
     bool showVelocity = false;
 
+    unsigned int particleCount;
+
+    bool showParticles = false;
+
     void createUI();
 };

@@ -77,6 +77,7 @@ int main()
         viewSettings.viewMatrix = camera.viewMatrix();
         viewSettings.cellsX = simulationSettings.cellsX;
         viewSettings.cellsY = simulationSettings.cellsY;
+        viewSettings.particleCount = simulationSettings.particleCount;
 
         renderer.update(simulator.buffers());
         renderer.render(surfaceTextureView, viewSettings);

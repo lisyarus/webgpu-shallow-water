@@ -210,6 +210,8 @@ WGPUTextureView Application::newFrame()
     if (surfaceTexture.status != WGPUSurfaceGetCurrentTextureStatus_Success)
         throw std::runtime_error(std::format("Can't get surface texture: {}", (int)surfaceTexture.status));
 
+    currentSurfaceTexture_ = surfaceTexture.texture;
+
     ImGui_ImplSDL2_NewFrame();
     ImGui_ImplWGPU_NewFrame();
     ImGui::NewFrame();
@@ -223,7 +225,8 @@ WGPUTextureView Application::newFrame()
     surfaceTextureViewDescriptor.arrayLayerCount = 1;
     surfaceTextureViewDescriptor.aspect = WGPUTextureAspect_All;
 
-    return wgpuTextureCreateView(surfaceTexture.texture, &surfaceTextureViewDescriptor);
+    currentSurfaceTextureView_ = wgpuTextureCreateView(surfaceTexture.texture, &surfaceTextureViewDescriptor);
+    return currentSurfaceTextureView_;
 }
 
 void Application::drawUI(WGPUTextureView target)
@@ -250,11 +253,15 @@ void Application::drawUI(WGPUTextureView target)
     WGPUCommandBuffer commandBuffer = wgpuCommandEncoderFinish(commandEncoder, &commandBufferDescriptor);
     wgpuQueueSubmit(queue_, 1, &commandBuffer);
     wgpuCommandBufferRelease(commandBuffer);
+    wgpuRenderPassEncoderRelease(renderPassEncoder);
+    wgpuCommandEncoderRelease(commandEncoder);
 }
 
 void Application::present()
 {
     wgpuSurfacePresent(surface_);
+    wgpuTextureViewRelease(currentSurfaceTextureView_);
+    wgpuTextureRelease(currentSurfaceTexture_);
 }
 
 void Application::createUI()

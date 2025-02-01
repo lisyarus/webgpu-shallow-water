@@ -5,4 +5,5 @@
 void ViewSettings::createUI()
 {
     ImGui::Checkbox("Show velocity", &showVelocity);
+    ImGui::Checkbox("Show particles", &showParticles);
 }

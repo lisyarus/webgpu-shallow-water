@@ -8,6 +8,7 @@ struct SimulationSettings
     float dt = 0.2f;
     float gravity = 10.f;
     float friction = 0.f;
+    unsigned int particleCount = 16 * 1024;
 
     void createUI();
 };

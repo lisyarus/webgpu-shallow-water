@@ -9,8 +9,16 @@ struct ViewSettings
     simulationSize : vec2u,
 }
 
+struct Particle
+{
+    position : vec2f,
+    lifetime : u32,
+    alive : u32,
+}
+
 @group(0) @binding(0) var bedWaterTexture : texture_2d<f32>;
 @group(0) @binding(1) var velocityTexture : texture_2d<f32>;
+@group(0) @binding(2) var<storage, read> particles : array<Particle>;
 
 @group(1) @binding(0) var linearSampler : sampler;
 
@@ -50,7 +58,7 @@ fn drawBedWaterFragmentMain(in : BedWaterVertexOut) -> @location(0) vec4f
     let bedFactor = 1.0 - exp(- 0.5 * bedWaterSample.x);
     let waterFactor = 1.0 - exp(- bedWaterSample.y);
 
-    let color = mix(vec3f(bedFactor), vec3f(0.0, 0.25, 1.0), waterFactor);
+    let color = mix(vec3f(bedFactor), vec3f(0.0, 0.125, 0.5), waterFactor);
 
     return vec4f(color, 1.0);
 }
@@ -99,6 +107,50 @@ fn drawVelocityFragmentMain(in : VelocityVertexOut) -> @location(0) vec4f
     return vec4f(1.0);
 }
 
+struct ParticleVertexOut
+{
+    @builtin(position) position : vec4f,
+    @location(0) extent : vec2f,
+}
+
+@vertex
+fn drawParticlesVertexMain(@builtin(vertex_index) index : u32) -> ParticleVertexOut
+{
+    let particle = particles[index / 6u];
+
+    if (particle.alive == 0u) {
+        return ParticleVertexOut(vec4f(100.0, 100.0, 0.0, 1.0), vec2f(0.0));
+    }
+
+    var extent = vec2f(0.0);
+
+    let vertexID = index % 6u;
+
+    if (vertexID == 0u) {
+        extent = vec2f(-1.0, -1.0);
+    } else if (vertexID == 1u || vertexID == 4u) {
+        extent = vec2f( 1.0, -1.0);
+    } else if (vertexID == 2u || vertexID == 3u) {
+        extent = vec2f(-1.0,  1.0);
+    } else {
+        extent = vec2f( 1.0,  1.0);
+    }
+
+    let radius = f32(max(viewSettings.simulationSize[0], viewSettings.simulationSize[1])) / 512.0;
+
+    return ParticleVertexOut(
+        viewSettings.viewMatrix * vec4f(particle.position + extent * radius, 0.0, 1.0),
+        extent
+    );
+}
+
+@fragment
+fn drawParticlesFragmentMain(in : ParticleVertexOut) -> @location(0) vec4f
+{
+    let alpha = 0.5 * exp(- 3.0 * dot(in.extent, in.extent));
+    return vec4f(vec3f(1.0), alpha);
+}
+
 )";
 
 namespace
@@ -139,6 +191,7 @@ struct Renderer::Impl
 
     WGPURenderPipeline drawBedWaterPipeline = nullptr;
     WGPURenderPipeline drawVelocityPipeline = nullptr;
+    WGPURenderPipeline drawParticlesPipeline = nullptr;
 
     Impl(WGPUDevice device, WGPUTextureFormat surfaceFormat);
 
@@ -157,8 +210,9 @@ struct Renderer::Impl
     void createSettingsBindGroup();
 
     void recreateBuffersBindGroup();
-    void recreateDrawBedWaterPipeline();
-    void recreateDrawVelocityPipeline();
+    void createDrawBedWaterPipeline();
+    void createDrawVelocityPipeline();
+    void createDrawParticlesPipeline();
 
     void updateSettingsBuffer(ViewSettings const & viewSettings);
 };
@@ -178,6 +232,10 @@ Renderer::Impl::Impl(WGPUDevice device, WGPUTextureFormat surfaceFormat)
     createSettingsBindGroupLayout();
     createSettingsUniformBuffer();
     createSettingsBindGroup();
+
+    createDrawBedWaterPipeline();
+    createDrawVelocityPipeline();
+    createDrawParticlesPipeline();
 }
 
 void Renderer::Impl::update(SimulationBuffers const & simulationBuffers)
@@ -187,8 +245,6 @@ void Renderer::Impl::update(SimulationBuffers const & simulationBuffers)
         this->simulationBuffers = simulationBuffers;
 
         recreateBuffersBindGroup();
-        recreateDrawBedWaterPipeline();
-        recreateDrawVelocityPipeline();
     }
 }
 
@@ -224,12 +280,21 @@ void Renderer::Impl::render(WGPUTextureView target, ViewSettings const & viewSet
         wgpuRenderPassEncoderDraw(renderPassEncoder, viewSettings.cellsX * viewSettings.cellsY * 3, 1, 0, 0);
     }
 
+    if (viewSettings.showParticles)
+    {
+        wgpuRenderPassEncoderSetPipeline(renderPassEncoder, drawParticlesPipeline);
+        wgpuRenderPassEncoderDraw(renderPassEncoder, viewSettings.particleCount * 6, 1, 0, 0);
+    }
+
     wgpuRenderPassEncoderEnd(renderPassEncoder);
 
     WGPUCommandBufferDescriptor commandBufferDescriptor = {};
     WGPUCommandBuffer commandBuffer = wgpuCommandEncoderFinish(commandEncoder, &commandBufferDescriptor);
     wgpuQueueSubmit(queue, 1, &commandBuffer);
+
     wgpuCommandBufferRelease(commandBuffer);
+    wgpuRenderPassEncoderRelease(renderPassEncoder);
+    wgpuCommandEncoderRelease(commandEncoder);
 }
 
 void Renderer::Impl::createShaderModule()
@@ -247,7 +312,7 @@ void Renderer::Impl::createShaderModule()
 
 void Renderer::Impl::createBuffersBindGroupLayout()
 {
-    WGPUBindGroupLayoutEntry entries[2] = {};
+    WGPUBindGroupLayoutEntry entries[3] = {};
 
     entries[0].binding = 0;
     entries[0].visibility = WGPUShaderStage_Vertex | WGPUShaderStage_Fragment;
@@ -260,6 +325,12 @@ void Renderer::Impl::createBuffersBindGroupLayout()
     entries[1].texture.sampleType = WGPUTextureSampleType_Float;
     entries[1].texture.viewDimension = WGPUTextureViewDimension_2D;
     entries[1].texture.multisampled = 0;
+
+    entries[2].binding = 2;
+    entries[2].visibility = WGPUShaderStage_Vertex;
+    entries[2].buffer.type = WGPUBufferBindingType_ReadOnlyStorage;
+    entries[2].buffer.hasDynamicOffset = 0;
+    entries[2].buffer.minBindingSize = 0;
 
     WGPUBindGroupLayoutDescriptor bindGroupLayoutDescriptor = {};
     bindGroupLayoutDescriptor.entries = entries;
@@ -362,13 +433,18 @@ void Renderer::Impl::recreateBuffersBindGroup()
 {
     if (buffersBindGroup) wgpuBindGroupRelease(buffersBindGroup);
 
-    WGPUBindGroupEntry entries[2] = {};
+    WGPUBindGroupEntry entries[3] = {};
 
     entries[0].binding = 0;
     entries[0].textureView = simulationBuffers.bedWaterTextureView;
 
     entries[1].binding = 1;
     entries[1].textureView = simulationBuffers.velocityTextureView;
+
+    entries[2].binding = 2;
+    entries[2].buffer = simulationBuffers.particlesBuffer;
+    entries[2].offset = 0;
+    entries[2].size = wgpuBufferGetSize(simulationBuffers.particlesBuffer);
 
     WGPUBindGroupDescriptor bindGroupDescriptor = {};
     bindGroupDescriptor.layout = buffersBindGroupLayout;
@@ -378,10 +454,8 @@ void Renderer::Impl::recreateBuffersBindGroup()
     buffersBindGroup = wgpuDeviceCreateBindGroup(device, &bindGroupDescriptor);
 }
 
-void Renderer::Impl::recreateDrawBedWaterPipeline()
+void Renderer::Impl::createDrawBedWaterPipeline()
 {
-    if (drawBedWaterPipeline) wgpuRenderPipelineRelease(drawBedWaterPipeline);
-
     WGPUBindGroupLayout bindGroupLayouts[] =
     {
         buffersBindGroupLayout,
@@ -420,10 +494,8 @@ void Renderer::Impl::recreateDrawBedWaterPipeline()
     drawBedWaterPipeline = wgpuDeviceCreateRenderPipeline(device, &renderPipelineDescriptor);
 }
 
-void Renderer::Impl::recreateDrawVelocityPipeline()
+void Renderer::Impl::createDrawVelocityPipeline()
 {
-    if (drawVelocityPipeline) wgpuRenderPipelineRelease(drawVelocityPipeline);
-
     WGPUBindGroupLayout bindGroupLayouts[] =
     {
         buffersBindGroupLayout,
@@ -460,6 +532,55 @@ void Renderer::Impl::recreateDrawVelocityPipeline()
     renderPipelineDescriptor.fragment = &fragmentState;
 
     drawVelocityPipeline = wgpuDeviceCreateRenderPipeline(device, &renderPipelineDescriptor);
+}
+
+void Renderer::Impl::createDrawParticlesPipeline()
+{
+    WGPUBindGroupLayout bindGroupLayouts[] =
+    {
+        buffersBindGroupLayout,
+        samplersBindGroupLayout,
+        settingsBindGroupLayout,
+    };
+
+    WGPUPipelineLayoutDescriptor pipelineLayoutDescriptor = {};
+    pipelineLayoutDescriptor.bindGroupLayoutCount = std::size(bindGroupLayouts);
+    pipelineLayoutDescriptor.bindGroupLayouts = bindGroupLayouts;
+
+    WGPUPipelineLayout pipelineLayout = wgpuDeviceCreatePipelineLayout(device, &pipelineLayoutDescriptor);
+
+    WGPUBlendState blendState = {};
+    blendState.color.operation = WGPUBlendOperation_Add;
+    blendState.color.srcFactor = WGPUBlendFactor_SrcAlpha;
+    blendState.color.dstFactor = WGPUBlendFactor_OneMinusSrcAlpha;
+    blendState.alpha.operation = WGPUBlendOperation_Add;
+    blendState.alpha.srcFactor = WGPUBlendFactor_SrcAlpha;
+    blendState.alpha.dstFactor = WGPUBlendFactor_OneMinusSrcAlpha;
+
+    WGPUColorTargetState colorTargetState = {};
+    colorTargetState.format = surfaceFormat;
+    colorTargetState.blend = &blendState;
+    colorTargetState.writeMask = WGPUColorWriteMask_All;
+
+    WGPUFragmentState fragmentState = {};
+    fragmentState.module = shaderModule;
+    fragmentState.entryPoint = "drawParticlesFragmentMain";
+    fragmentState.targetCount = 1;
+    fragmentState.targets = &colorTargetState;
+
+    WGPURenderPipelineDescriptor renderPipelineDescriptor = {};
+    renderPipelineDescriptor.layout = pipelineLayout;
+    renderPipelineDescriptor.vertex.module = shaderModule;
+    renderPipelineDescriptor.vertex.entryPoint = "drawParticlesVertexMain";
+    renderPipelineDescriptor.primitive.topology = WGPUPrimitiveTopology_TriangleList;
+    renderPipelineDescriptor.primitive.stripIndexFormat = WGPUIndexFormat_Undefined;
+    renderPipelineDescriptor.primitive.frontFace = WGPUFrontFace_CCW;
+    renderPipelineDescriptor.primitive.cullMode = WGPUCullMode_None;
+    renderPipelineDescriptor.multisample.count = 1;
+    renderPipelineDescriptor.multisample.mask = (unsigned int)(-1);
+    renderPipelineDescriptor.fragment = &fragmentState;
+
+    drawParticlesPipeline = wgpuDeviceCreateRenderPipeline(device, &renderPipelineDescriptor);
 }
 
 void Renderer::Impl::updateSettingsBuffer(ViewSettings const & viewSettings)

@@ -3,6 +3,7 @@
 #include <imgui.h>
 
 #include <format>
+#include <cmath>
 
 void SimulationSettings::createUI()
 {
@@ -27,4 +28,12 @@ void SimulationSettings::createUI()
     ImGui::SliderFloat("dt", &dt, 0.01f, 1.f, "%.2f");
     ImGui::SliderFloat("Gravity", &gravity, 0.f, 100.f, "%.1f");
     ImGui::SliderFloat("Friction", &friction, 0.f, 1.f, "%.2f");
+
+    float particlesLog2 = particleCount == 0 ? 0.f : std::log2(1.f * particleCount);
+    auto particlesStr = std::format("{}", this->particleCount);
+
+    ImGui::SliderFloat("Particles", &particlesLog2, 6.f, 20.f, particlesStr.data());
+
+    particleCount = (particlesLog2 == 0.f) ? 0 : std::exp2(particlesLog2);
+    particleCount = std::max(64u, (particleCount / 64u) * 64u);
 }

@@ -44,6 +44,9 @@ private:
     WGPUQueue queue_ = nullptr;
     WGPUTextureFormat surfaceFormat_ = WGPUTextureFormat_BGRA8UnormSrgb;
 
+    WGPUTexture currentSurfaceTexture_ = nullptr;
+    WGPUTextureView currentSurfaceTextureView_ = nullptr;
+
     ImGuiContext * imguiContext_ = nullptr;
 
     bool running_ = true;

@@ -23,12 +23,21 @@ struct SimulationSettings
     dx : f32,
     gravity : f32,
     frictionFactor : f32,
+    timestamp : u32,
+}
+
+struct Particle
+{
+    position : vec2f,
+    lifetime : u32,
+    alive : u32,
 }
 
 @group(0) @binding(0) var bedWaterTexture : texture_storage_2d<rg32float, read_write>;
 @group(0) @binding(1) var flowXTexture : texture_storage_2d<r32float, read_write>;
 @group(0) @binding(2) var flowYTexture : texture_storage_2d<r32float, read_write>;
 @group(0) @binding(3) var velocityTexture : texture_storage_2d<rg32float, read_write>;
+@group(0) @binding(4) var<storage, read_write> particles : array<Particle>;
 
 @group(1) @binding(0) var<uniform> interactionSettings : InteractionSettings;
 @group(1) @binding(1) var<uniform> simulationSettings : SimulationSettings;
@@ -95,6 +104,11 @@ fn waterSurfaceAt(p : vec2u) -> f32
 fn stepAccelerate(@builtin(global_invocation_id) id: vec3u)
 {
     let waterSurfaceBase = waterSurfaceAt(id.xy);
+
+    if (id.x == 0u) {
+        textureStore(flowXTexture, id.xy, vec4f(10.0, 0.0, 0.0, 0.0));
+        textureStore(flowXTexture, vec2u(simulationSettings.size[0], id.y), vec4f(10.0, 0.0, 0.0, 0.0));
+    }
 
     if (id.x >= 1u) {
         var flowX = textureLoad(flowXTexture, id.xy).x;
@@ -166,6 +180,90 @@ fn stepMove(@builtin(global_invocation_id) id: vec3u)
     textureStore(velocityTexture, id.xy, vec4f(velocity, 0.0, 0.0));
 }
 
+struct RNGState
+{
+    state : u32,
+}
+
+fn randomUint(state : ptr<function, RNGState>) -> u32
+{
+    // 32-bit xor-shift
+    var x = (*state).state;
+    x ^= x << 13;
+    x ^= x >> 17;
+    x ^= x << 5;
+    (*state).state = x;
+    return x;
+}
+
+fn rngInit(state : ptr<function, RNGState>, seed : u32)
+{
+    (*state).state += seed;
+    randomUint(state);
+}
+
+fn randomFloat(state : ptr<function, RNGState>) -> f32
+{
+    return f32(randomUint(state)) / 4294967295.0;
+}
+
+@compute @workgroup_size(64)
+fn updateParticles(@builtin(global_invocation_id) id: vec3u)
+{
+    var particle = particles[id.x];
+
+    if (particle.lifetime > 0u) {
+        particle.lifetime -= 1u;
+    }
+
+    if (false
+        || particle.alive == 0u
+        || particle.lifetime == 0u
+        || particle.position[0] < 0.0
+        || particle.position[1] < 0.0
+        || particle.position[0] >= f32(simulationSettings.size[0])
+        || particle.position[1] >= f32(simulationSettings.size[1])
+        ) {
+        var rngState = RNGState(0u);
+        rngInit(&rngState, id.x);
+        rngInit(&rngState, simulationSettings.timestamp);
+
+        particle.position.x = randomFloat(&rngState) * f32(simulationSettings.size[0]);
+        particle.position.y = randomFloat(&rngState) * f32(simulationSettings.size[1]);
+
+        particle.alive = 1u;
+        particle.lifetime = (randomUint(&rngState) % 300u);
+    }
+
+    let px = max(0.0, min(f32(simulationSettings.size[0]) - 1.0, particle.position[0] - 0.5));
+    let py = max(0.0, min(f32(simulationSettings.size[1]) - 1.0, particle.position[1] - 0.5));
+
+    let ix = u32(floor(px));
+    let iy = u32(floor(py));
+
+    let tx = px - f32(ix);
+    let ty = py - f32(iy);
+
+    if (textureLoad(bedWaterTexture, vec2u(ix, iy)).y < 1e-3) {
+        particle.alive = 0u;
+    }
+
+    let v00 = textureLoad(velocityTexture, vec2u(ix, iy)).xy;
+    let v01 = textureLoad(velocityTexture, vec2u(ix + 1u, iy)).xy;
+    let v10 = textureLoad(velocityTexture, vec2u(ix, iy + 1u)).xy;
+    let v11 = textureLoad(velocityTexture, vec2u(ix + 1u, iy + 1u)).xy;
+
+    let velocity = mix(
+        mix(v00, v01, tx),
+        mix(v10, v11, tx),
+        ty
+    );
+
+    particle.position += velocity * simulationSettings.dt * 0.5;
+
+    particles[id.x] = particle;
+}
+
 )";
 
 namespace
@@ -179,7 +277,7 @@ namespace
         Vector2f position;
     };
 
-    struct SimulationSettingsUniform
+    struct alignas(8) SimulationSettingsUniform
     {
         unsigned int cellsX;
         unsigned int cellsY;
@@ -187,6 +285,14 @@ namespace
         float dx;
         float gravity;
         float frictionFactor;
+        unsigned int timestamp;
+    };
+
+    struct Particle
+    {
+        Vector2f position;
+        unsigned int lifetime;
+        unsigned int alive;
     };
 
 }
@@ -214,6 +320,8 @@ struct Simulator::Impl
     WGPUComputePipeline stepScalePipeline = nullptr;
     WGPUComputePipeline stepMovePipeline = nullptr;
 
+    WGPUComputePipeline updateParticlesPipeline = nullptr;
+
     unsigned int cellsX = -1;
     unsigned int cellsY = -1;
     WGPUTexture bedWaterTexture = nullptr;
@@ -224,6 +332,11 @@ struct Simulator::Impl
     WGPUTextureView flowXTextureView = nullptr;
     WGPUTextureView flowYTextureView = nullptr;
     WGPUTextureView velocityTextureView = nullptr;
+
+    unsigned int particleCount = -1;
+    WGPUBuffer particlesBuffer = nullptr;
+
+    unsigned int timestamp = 0;
 
     Impl(WGPUDevice device);
 
@@ -241,8 +354,10 @@ struct Simulator::Impl
     void createClearPipeline();
     void createInteractPipeline();
     void createStepPipelines();
+    void createParticlesPipeline();
 
     void recreateGridBuffers();
+    void recreateParticleBuffers();
     void recreateBuffersBindGroup();
 };
 
@@ -262,6 +377,8 @@ Simulator::Impl::Impl(WGPUDevice device)
     createClearPipeline();
     createInteractPipeline();
     createStepPipelines();
+
+    createParticlesPipeline();
 }
 
 void Simulator::Impl::interact(float dt, InteractionSettings const & settings, Vector2f const & oldPosition, Vector2f const & position)
@@ -300,18 +417,33 @@ void Simulator::Impl::interact(float dt, InteractionSettings const & settings, V
     wgpuQueueSubmit(queue, 1, &commandBuffer);
 
     wgpuCommandBufferRelease(commandBuffer);
+    wgpuComputePassEncoderRelease(computePassEncoder);
+    wgpuCommandEncoderRelease(commandEncoder);
 }
 
 void Simulator::Impl::step(SimulationSettings const & settings)
 {
+    bool needUpdateBuffersBindGroup = false;
+
     if (settings.cellsX != cellsX || settings.cellsY != cellsY)
     {
         cellsX = settings.cellsX;
         cellsY = settings.cellsY;
 
         recreateGridBuffers();
-        recreateBuffersBindGroup();
+        needUpdateBuffersBindGroup = true;
     }
+
+    if (settings.particleCount != particleCount)
+    {
+        particleCount = settings.particleCount;
+
+        recreateParticleBuffers();
+        needUpdateBuffersBindGroup = true;
+    }
+
+    if (needUpdateBuffersBindGroup)
+        recreateBuffersBindGroup();
 
     if (settings.paused)
         return;
@@ -324,6 +456,7 @@ void Simulator::Impl::step(SimulationSettings const & settings)
         .dx = 1.f,
         .gravity = settings.gravity,
         .frictionFactor = std::pow(1.f - settings.friction, settings.dt),
+        .timestamp = timestamp,
     };
 
     wgpuQueueWriteBuffer(queue, simulationSettingsUniformBuffer, 0, &settingsUniform, sizeof(settingsUniform));
@@ -344,6 +477,8 @@ void Simulator::Impl::step(SimulationSettings const & settings)
     wgpuComputePassEncoderDispatchWorkgroups(computePassEncoder, cellsX / 16, cellsY / 16, 1);
     wgpuComputePassEncoderSetPipeline(computePassEncoder, stepMovePipeline);
     wgpuComputePassEncoderDispatchWorkgroups(computePassEncoder, cellsX / 16, cellsY / 16, 1);
+    wgpuComputePassEncoderSetPipeline(computePassEncoder, updateParticlesPipeline);
+    wgpuComputePassEncoderDispatchWorkgroups(computePassEncoder, particleCount / 64, 1, 1);
     wgpuComputePassEncoderEnd(computePassEncoder);
 
     WGPUCommandBufferDescriptor commandBufferDescriptor = {};
@@ -353,6 +488,10 @@ void Simulator::Impl::step(SimulationSettings const & settings)
     wgpuQueueSubmit(queue, 1, &commandBuffer);
 
     wgpuCommandBufferRelease(commandBuffer);
+    wgpuComputePassEncoderRelease(computePassEncoder);
+    wgpuCommandEncoderRelease(commandEncoder);
+
+    ++timestamp;
 }
 
 void Simulator::Impl::createShaderModule()
@@ -387,7 +526,7 @@ void Simulator::Impl::createUniformBuffers()
 
 void Simulator::Impl::createBuffersBindGroupLayout()
 {
-    WGPUBindGroupLayoutEntry entries[4] = {};
+    WGPUBindGroupLayoutEntry entries[5] = {};
 
     entries[0].binding = 0;
     entries[0].visibility = WGPUShaderStage_Compute;
@@ -412,6 +551,12 @@ void Simulator::Impl::createBuffersBindGroupLayout()
     entries[3].storageTexture.access = WGPUStorageTextureAccess_ReadWrite;
     entries[3].storageTexture.format = WGPUTextureFormat_RG32Float;
     entries[3].storageTexture.viewDimension = WGPUTextureViewDimension_2D;
+
+    entries[4].binding = 4;
+    entries[4].visibility = WGPUShaderStage_Compute;
+    entries[4].buffer.type = WGPUBufferBindingType_Storage;
+    entries[4].buffer.hasDynamicOffset = 0;
+    entries[4].buffer.minBindingSize = 0;
 
     WGPUBindGroupLayoutDescriptor bindGroupLayoutDescriptor = {};
     bindGroupLayoutDescriptor.entries = entries;
@@ -544,6 +689,28 @@ void Simulator::Impl::createStepPipelines()
     stepMovePipeline = wgpuDeviceCreateComputePipeline(device, &stepMovePipelineDescriptor);
 }
 
+void Simulator::Impl::createParticlesPipeline()
+{
+    WGPUBindGroupLayout bindGroupLayouts[2] =
+    {
+        buffersBindGroupLayout,
+        settingsBindGroupLayout,
+    };
+
+    WGPUPipelineLayoutDescriptor pipelineLayoutDescriptor = {};
+    pipelineLayoutDescriptor.bindGroupLayouts = bindGroupLayouts;
+    pipelineLayoutDescriptor.bindGroupLayoutCount = std::size(bindGroupLayouts);
+
+    WGPUPipelineLayout pipelineLayout = wgpuDeviceCreatePipelineLayout(device, &pipelineLayoutDescriptor);
+
+    WGPUComputePipelineDescriptor pipelineDescriptor = {};
+    pipelineDescriptor.layout = pipelineLayout;
+    pipelineDescriptor.compute.module = shaderModule;
+    pipelineDescriptor.compute.entryPoint = "updateParticles";
+
+    updateParticlesPipeline = wgpuDeviceCreateComputePipeline(device, &pipelineDescriptor);
+}
+
 void Simulator::Impl::recreateGridBuffers()
 {
     if (bedWaterTexture) wgpuTextureRelease(bedWaterTexture);
@@ -552,6 +719,8 @@ void Simulator::Impl::recreateGridBuffers()
     if (flowXTextureView) wgpuTextureViewRelease(flowXTextureView);
     if (flowYTexture) wgpuTextureRelease(flowYTexture);
     if (flowYTextureView) wgpuTextureViewRelease(flowYTextureView);
+    if (velocityTexture) wgpuTextureRelease(velocityTexture);
+    if (velocityTextureView) wgpuTextureViewRelease(velocityTextureView);
 
     WGPUTextureDescriptor gridTextureDescriptor = {};
     gridTextureDescriptor.usage = WGPUTextureUsage_StorageBinding | WGPUTextureUsage_TextureBinding;
@@ -602,11 +771,21 @@ void Simulator::Impl::recreateGridBuffers()
     std::cout << "Created simulation buffers with size " << cellsX << "x" << cellsY << std::endl;
 }
 
+void Simulator::Impl::recreateParticleBuffers()
+{
+    WGPUBufferDescriptor particlesBufferDescriptor = {};
+    particlesBufferDescriptor.usage = WGPUBufferUsage_Storage;
+    particlesBufferDescriptor.size = sizeof(Particle) * particleCount;
+    particlesBufferDescriptor.mappedAtCreation = 0;
+
+    particlesBuffer = wgpuDeviceCreateBuffer(device, &particlesBufferDescriptor);
+}
+
 void Simulator::Impl::recreateBuffersBindGroup()
 {
     if (buffersBindGroup) wgpuBindGroupRelease(buffersBindGroup);
 
-    WGPUBindGroupEntry entries[4] = {};
+    WGPUBindGroupEntry entries[5] = {};
 
     entries[0].binding = 0;
     entries[0].textureView = bedWaterTextureView;
@@ -619,6 +798,11 @@ void Simulator::Impl::recreateBuffersBindGroup()
 
     entries[3].binding = 3;
     entries[3].textureView = velocityTextureView;
+
+    entries[4].binding = 4;
+    entries[4].buffer = particlesBuffer;
+    entries[4].offset = 0;
+    entries[4].size = wgpuBufferGetSize(particlesBuffer);
 
     WGPUBindGroupDescriptor bindGroupDescriptor = {};
     bindGroupDescriptor.layout = buffersBindGroupLayout;
@@ -649,5 +833,6 @@ SimulationBuffers Simulator::buffers()
     return {
         .bedWaterTextureView = pimpl_->bedWaterTextureView,
         .velocityTextureView = pimpl_->velocityTextureView,
+        .particlesBuffer = pimpl_->particlesBuffer,
     };
 }
