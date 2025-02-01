@@ -266,6 +266,8 @@ void Application::present()
 
 void Application::createUI()
 {
+    ImGui::SeparatorText("Application");
+
     if (ImGui::Checkbox("VSync", &vsync_))
         needUpdateSurface_ = true;
 }

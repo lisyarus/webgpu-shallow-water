@@ -7,6 +7,8 @@
 
 void InteractionSettings::createUI()
 {
+    ImGui::SeparatorText("Interaction");
+
     static char const * modeNames[] =
     {
         "None",

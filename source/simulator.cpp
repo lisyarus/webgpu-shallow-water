@@ -24,6 +24,7 @@ struct SimulationSettings
     gravity : f32,
     frictionFactor : f32,
     timestamp : u32,
+    borderMask : u32,
 }
 
 struct Particle
@@ -100,14 +101,46 @@ fn waterSurfaceAt(p : vec2u) -> f32
     return bedWaterSample.x + bedWaterSample.y;
 }
 
+fn borderFlow(borderType : u32, bed : f32) -> f32
+{
+    if (bed > 1.0) {
+        return 0.0;
+    }
+
+    if (borderType == 0u) {
+        return 0.0;
+    } else if (borderType == 1u) {
+        return 10.0;
+    } else {
+        return -10.0;
+    }
+}
+
 @compute @workgroup_size(16, 16)
 fn stepAccelerate(@builtin(global_invocation_id) id: vec3u)
 {
-    let waterSurfaceBase = waterSurfaceAt(id.xy);
+    let bedWaterSample = textureLoad(bedWaterTexture, id.xy);
+    let waterSurfaceBase = bedWaterSample.x + bedWaterSample.y;
+
+    let leftBorder = simulationSettings.borderMask & 3u;
+    let rightBorder = (simulationSettings.borderMask >> 2) & 3u;
+    let bottomBorder = (simulationSettings.borderMask >> 4) & 3u;
+    let topBorder = (simulationSettings.borderMask >> 6) & 3u;
 
     if (id.x == 0u) {
-        textureStore(flowXTexture, id.xy, vec4f(10.0, 0.0, 0.0, 0.0));
-        textureStore(flowXTexture, vec2u(simulationSettings.size[0], id.y), vec4f(10.0, 0.0, 0.0, 0.0));
+        textureStore(flowXTexture, id.xy, vec4f(borderFlow(leftBorder, bedWaterSample.x), 0.0, 0.0, 0.0));
+    }
+
+    if (id.x + 1u == simulationSettings.size[0]) {
+        textureStore(flowXTexture, vec2u(id.x + 1u, id.y), vec4f(-borderFlow(rightBorder, bedWaterSample.x), 0.0, 0.0, 0.0));
+    }
+
+    if (id.y == 0u) {
+        textureStore(flowYTexture, id.xy, vec4f(borderFlow(bottomBorder, bedWaterSample.x), 0.0, 0.0, 0.0));
+    }
+
+    if (id.y + 1u == simulationSettings.size[1]) {
+        textureStore(flowYTexture, vec2u(id.x, id.y + 1u), vec4f(-borderFlow(topBorder, bedWaterSample.x), 0.0, 0.0, 0.0));
     }
 
     if (id.x >= 1u) {
@@ -285,6 +318,7 @@ namespace
         float gravity;
         float frictionFactor;
         unsigned int timestamp;
+        unsigned int borderMask;
     };
 
     struct Particle
@@ -456,6 +490,7 @@ void Simulator::Impl::step(SimulationSettings const & settings)
         .gravity = settings.gravity,
         .frictionFactor = std::pow(1.f - settings.friction, settings.dt),
         .timestamp = timestamp,
+        .borderMask = (unsigned int)(settings.leftBorder) | ((unsigned int)(settings.rightBorder) << 2) | ((unsigned int)(settings.bottomBorder) << 4) | ((unsigned int)(settings.topBorder) << 6),
     };
 
     wgpuQueueWriteBuffer(queue, simulationSettingsUniformBuffer, 0, &settingsUniform, sizeof(settingsUniform));

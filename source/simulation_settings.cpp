@@ -7,6 +7,8 @@
 
 void SimulationSettings::createUI()
 {
+    ImGui::SeparatorText("Simulation");
+
     if (ImGui::Button(paused ? "Paused" : "Running"))
         paused ^= true;
 
@@ -36,4 +38,18 @@ void SimulationSettings::createUI()
 
     particleCount = (particlesLog2 == 0.f) ? 0 : std::exp2(particlesLog2);
     particleCount = std::max(64u, (particleCount / 64u) * 64u);
+
+    ImGui::SeparatorText("Borders");
+
+    char const * borderTypeStr[]
+    {
+        "Wall",
+        "Source",
+        "Drain",
+    };
+
+    ImGui::Combo("Left border", (int *)&leftBorder, borderTypeStr, 3);
+    ImGui::Combo("Right border", (int *)&rightBorder, borderTypeStr, 3);
+    ImGui::Combo("Bottom border", (int *)&bottomBorder, borderTypeStr, 3);
+    ImGui::Combo("Top border", (int *)&topBorder, borderTypeStr, 3);
 }
