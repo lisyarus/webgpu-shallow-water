@@ -158,7 +158,7 @@ fn loadPreset(@builtin(global_invocation_id) id: vec3u)
         let noise = perlinNoise(vec2f(position.x, 0.0), baseNoiseGridSize * 2.0, simulationSettings.timestamp);
         let riverY = mix(0.4, 0.6, noise) * f32(simulationSettings.size.y);
 
-        bed = 10.0 * clamp(0.0, 1.0, 8.0 * abs(position.y - riverY) / simulationMinSize - 0.25);
+        bed = 10.0 * clamp(8.0 * abs(position.y - riverY) / simulationMinSize - 0.25, 0.0, 1.0);
     } else if (interactionSettings.preset == 2u) {
         let noise = perlinNoise(position, baseNoiseGridSize * 2.0, simulationSettings.timestamp);
 
