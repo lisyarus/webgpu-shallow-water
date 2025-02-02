@@ -7,6 +7,7 @@ enum class InteractionMode : int
     RemoveBed,
     AddWater,
     RemoveWater,
+    MoveWater,
 };
 
 struct InteractionSettings

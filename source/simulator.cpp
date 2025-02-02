@@ -73,26 +73,46 @@ fn pointToSegmentDistance(p : vec2f, s0 : vec2f, s1 : vec2f) -> f32
 fn interact(@builtin(global_invocation_id) id: vec3u)
 {
     let position = vec2f(id.xy) + vec2f(0.5);
-    let distance = pointToSegmentDistance(position, interactionSettings.oldPosition, interactionSettings.position);
 
-    let delta = pow(128.0, interactionSettings.force) * interactionSettings.force * interactionSettings.dt * smoothstep(interactionSettings.radius, interactionSettings.radius * interactionSettings.force - 1.0, distance);
+    if (interactionSettings.mode >= 1u && interactionSettings.mode <= 4u) {
 
-    var value = textureLoad(bedWaterTexture, id.xy);
+        let distance = pointToSegmentDistance(position, interactionSettings.oldPosition, interactionSettings.position);
 
-    if (interactionSettings.mode == 1u) {
-        value.x += 10.0 * delta;
-    } else if (interactionSettings.mode == 2u) {
-        value.x -= 10.0 * delta;
-    } else if (interactionSettings.mode == 3u) {
-        value.y += delta;
-    } else if (interactionSettings.mode == 4u) {
-        value.y -= delta;
+        let delta = pow(128.0, interactionSettings.force) * interactionSettings.force * interactionSettings.dt * smoothstep(interactionSettings.radius, interactionSettings.radius * interactionSettings.force - 1.0, distance);
+
+        var value = textureLoad(bedWaterTexture, id.xy);
+
+        if (interactionSettings.mode == 1u) {
+            value.x += 10.0 * delta;
+        } else if (interactionSettings.mode == 2u) {
+            value.x -= 10.0 * delta;
+        } else if (interactionSettings.mode == 3u) {
+            value.y += delta;
+        } else if (interactionSettings.mode == 4u) {
+            value.y -= delta;
+        }
+
+        value.x = max(0.0, min(10.0, value.x));
+        value.y = max(0.0, value.y);
+
+        textureStore(bedWaterTexture, id.xy, value);
+    } else if (interactionSettings.mode == 5u) {
+        if (id.x >= 1u && id.y >= 1u) {
+            let distance = length(interactionSettings.position - position);
+            let distanceFactor = smoothstep(interactionSettings.radius * 1.1, interactionSettings.radius * 0.9, distance);
+
+            let impulse = distanceFactor * (interactionSettings.position - interactionSettings.oldPosition) / interactionSettings.dt * interactionSettings.force;
+
+            var flowX = textureLoad(flowXTexture, id.xy).r;
+            var flowY = textureLoad(flowYTexture, id.xy).r;
+
+            flowX += impulse.x;
+            flowY += impulse.y;
+
+            textureStore(flowXTexture, id.xy, vec4f(flowX, 0.0, 0.0, 0.0));
+            textureStore(flowYTexture, id.xy, vec4f(flowY, 0.0, 0.0, 0.0));
+        }
     }
-
-    value.x = max(0.0, min(10.0, value.x));
-    value.y = max(0.0, value.y);
-
-    textureStore(bedWaterTexture, id.xy, value);
 }
 
 fn waterSurfaceAt(p : vec2u) -> f32
