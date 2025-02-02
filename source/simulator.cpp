@@ -166,7 +166,7 @@ fn loadPreset(@builtin(global_invocation_id) id: vec3u)
     } else if (interactionSettings.preset == 3u) {
         let noise = perlinNoise(vec2f(position.x, 0.0), baseNoiseGridSize * 2.0, simulationSettings.timestamp);
 
-        bed = clamp(20.0 * (position.y / f32(simulationSettings.size.y) - mix(0.4, 0.6, noise)), 0.0, 10.0);
+        bed = clamp(40.0 * (position.y / f32(simulationSettings.size.y) - mix(0.4, 0.6, noise)), 0.0, 10.0);
     }
 
     textureStore(bedWaterTexture, id.xy, vec4f(bed, 0.0, 0.0, 0.0));
@@ -254,8 +254,10 @@ fn borderFlow(borderType : u32, bed : f32) -> f32
         return 0.0;
     } else if (borderType == 1u) {
         return 10.0;
-    } else {
+    } else if (borderType == 2u) {
         return -10.0;
+    } else {
+        return 10.0 * sin(f32(simulationSettings.timestamp) / 30.0);
     }
 }
 

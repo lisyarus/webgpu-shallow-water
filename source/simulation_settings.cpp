@@ -46,10 +46,11 @@ void SimulationSettings::createUI()
         "Wall",
         "Source",
         "Drain",
+        "Waves",
     };
 
-    ImGui::Combo("Left border", (int *)&leftBorder, borderTypeStr, 3);
-    ImGui::Combo("Right border", (int *)&rightBorder, borderTypeStr, 3);
-    ImGui::Combo("Bottom border", (int *)&bottomBorder, borderTypeStr, 3);
-    ImGui::Combo("Top border", (int *)&topBorder, borderTypeStr, 3);
+    ImGui::Combo("Left border", (int *)&leftBorder, borderTypeStr, std::size(borderTypeStr));
+    ImGui::Combo("Right border", (int *)&rightBorder, borderTypeStr, std::size(borderTypeStr));
+    ImGui::Combo("Bottom border", (int *)&bottomBorder, borderTypeStr, std::size(borderTypeStr));
+    ImGui::Combo("Top border", (int *)&topBorder, borderTypeStr, std::size(borderTypeStr));
 }

@@ -5,6 +5,7 @@ enum class BorderType : unsigned int
     Wall,
     Source,
     Drain,
+    Waves,
 };
 
 struct SimulationSettings
