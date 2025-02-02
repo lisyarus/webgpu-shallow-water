@@ -1,6 +1,6 @@
 #pragma once
 
-struct Vector2f
+struct alignas(8) Vector2f
 {
     float x, y;
 };

@@ -6,6 +6,8 @@
 static char const shaderSource[] =
 R"(
 
+const PI = 3.1415926535;
+
 struct InteractionSettings
 {
     mode : u32,
@@ -14,6 +16,7 @@ struct InteractionSettings
     dt : f32,
     oldPosition : vec2f,
     position : vec2f,
+    preset : u32,
 }
 
 struct SimulationSettings
@@ -34,6 +37,81 @@ struct Particle
     alive : u32,
 }
 
+struct RNGState
+{
+    state : u32,
+}
+
+fn rngHash(state : u32) -> u32
+{
+    var x = state;
+    x = x * 747796405u + 2891336453u;
+    let y = ((x >> ((x >> 28u) + 4u)) ^ x) * 277803737u;
+    x = (y >> 22u) ^ y;
+    return x;
+}
+
+fn randomUint(state : ptr<function, RNGState>) -> u32
+{
+    (*state).state = rngHash((*state).state);
+    return (*state).state;
+}
+
+fn rngInit(state : ptr<function, RNGState>, seed : u32)
+{
+    (*state).state += seed;
+    randomUint(state);
+}
+
+fn randomFloat(state : ptr<function, RNGState>) -> f32
+{
+    return f32(randomUint(state)) / 4294967295.0;
+}
+
+fn perlinNoiseGridVector(gridPoint : vec2u, seed : u32) -> vec2f
+{
+    var state = RNGState(0u);
+    rngInit(&state, seed);
+    rngInit(&state, gridPoint.x);
+    rngInit(&state, gridPoint.y);
+
+    let angle = randomFloat(&state) * (2.0 * PI);
+
+    return vec2f(cos(angle), sin(angle));
+}
+
+fn perlinNoise(point : vec2f, gridSize : f32, seed : u32) -> f32
+{
+    let gridPosition = point / gridSize;
+
+    let ix = u32(floor(gridPosition.x));
+    let iy = u32(floor(gridPosition.y));
+
+    let tx = gridPosition.x - f32(ix);
+    let ty = gridPosition.y - f32(iy);
+
+    let sx = smoothstep(0.0, 1.0, tx);
+    let sy = smoothstep(0.0, 1.0, ty);
+
+    let v00 = perlinNoiseGridVector(vec2u(ix + 0u, iy + 0u), seed);
+    let v01 = perlinNoiseGridVector(vec2u(ix + 1u, iy + 0u), seed);
+    let v10 = perlinNoiseGridVector(vec2u(ix + 0u, iy + 1u), seed);
+    let v11 = perlinNoiseGridVector(vec2u(ix + 1u, iy + 1u), seed);
+
+    let d00 = dot(v00, vec2f(tx, ty));
+    let d01 = dot(v01, vec2f(tx - 1.0, ty));
+    let d10 = dot(v10, vec2f(tx, ty - 1.0));
+    let d11 = dot(v11, vec2f(tx - 1.0, ty - 1.0));
+
+    let d = mix(
+        mix(d00, d01, sx),
+        mix(d10, d11, sx),
+        sy
+    );
+
+    return 0.5 + d / sqrt(2.0);
+}
+
 @group(0) @binding(0) var bedWaterTexture : texture_storage_2d<rg32float, read_write>;
 @group(0) @binding(1) var flowXTexture : texture_storage_2d<r32float, read_write>;
 @group(0) @binding(2) var flowYTexture : texture_storage_2d<r32float, read_write>;
@@ -50,13 +128,48 @@ fn clearBuffers(@builtin(global_invocation_id) id: vec3u)
     textureStore(flowXTexture, id.xy, vec4f(0.0));
     textureStore(flowYTexture, id.xy, vec4f(0.0));
 
-    if (id.x + 1u == simulationSettings.size[0]) {
+    if (id.x + 1u == simulationSettings.size.x) {
         textureStore(flowXTexture, id.xy + vec2u(1u, 0u), vec4f(0.0));
     }
 
-    if (id.y + 1u == simulationSettings.size[1]) {
+    if (id.y + 1u == simulationSettings.size.y) {
         textureStore(flowXTexture, id.xy + vec2u(0u, 1u), vec4f(0.0));
     }
+}
+
+@compute @workgroup_size(16, 16)
+fn loadPreset(@builtin(global_invocation_id) id: vec3u)
+{
+    let position = vec2f(id.xy) + vec2f(0.5);
+
+    let simulationMinSize = f32(min(simulationSettings.size.x, simulationSettings.size.y));
+    let baseNoiseGridSize = simulationMinSize / 16.0;
+
+    var bed = 0.0;
+
+    if (interactionSettings.preset == 0u) {
+        let noise = 0.75 * perlinNoise(position, baseNoiseGridSize, simulationSettings.timestamp)
+            + 0.25 * perlinNoise(position, baseNoiseGridSize / 2.0, simulationSettings.timestamp);
+
+        let center = vec2f(simulationSettings.size) / 2.0;
+        let t = noise - 0.5 * length(position - center) / simulationMinSize;
+        bed = 10.0 * smoothstep(0.45, 0.55, t);
+    } else if (interactionSettings.preset == 1u) {
+        let noise = perlinNoise(vec2f(position.x, 0.0), baseNoiseGridSize * 2.0, simulationSettings.timestamp);
+        let riverY = mix(0.4, 0.6, noise) * f32(simulationSettings.size.y);
+
+        bed = 10.0 * clamp(0.0, 1.0, 8.0 * abs(position.y - riverY) / simulationMinSize - 0.25);
+    } else if (interactionSettings.preset == 2u) {
+        let noise = perlinNoise(position, baseNoiseGridSize * 2.0, simulationSettings.timestamp);
+
+        bed = clamp(20.0 * abs(2.0 * noise - 1.0) - 4.0, 0.0, 10.0);
+    } else if (interactionSettings.preset == 3u) {
+        let noise = perlinNoise(vec2f(position.x, 0.0), baseNoiseGridSize * 2.0, simulationSettings.timestamp);
+
+        bed = clamp(20.0 * (position.y / f32(simulationSettings.size.y) - mix(0.4, 0.6, noise)), 0.0, 10.0);
+    }
+
+    textureStore(bedWaterTexture, id.xy, vec4f(bed, 0.0, 0.0, 0.0));
 }
 
 fn pointToSegmentDistance(p : vec2f, s0 : vec2f, s1 : vec2f) -> f32
@@ -243,32 +356,6 @@ fn stepMove(@builtin(global_invocation_id) id: vec3u)
     textureStore(velocityTexture, id.xy, vec4f(velocity, 0.0, 0.0));
 }
 
-struct RNGState
-{
-    state : u32,
-}
-
-fn randomUint(state : ptr<function, RNGState>) -> u32
-{
-    var x = (*state).state;
-    x = x * 747796405u + 2891336453u;
-    let y = ((x >> ((x >> 28u) + 4u)) ^ x) * 277803737u;
-    x = (y >> 22u) ^ y;
-    (*state).state = x;
-    return x;
-}
-
-fn rngInit(state : ptr<function, RNGState>, seed : u32)
-{
-    (*state).state += seed;
-    randomUint(state);
-}
-
-fn randomFloat(state : ptr<function, RNGState>) -> f32
-{
-    return f32(randomUint(state)) / 4294967295.0;
-}
-
 @compute @workgroup_size(64)
 fn updateParticles(@builtin(global_invocation_id) id: vec3u)
 {
@@ -337,6 +424,7 @@ namespace
         float dt;
         Vector2f oldPosition;
         Vector2f position;
+        unsigned int preset = -1;
     };
 
     struct alignas(8) SimulationSettingsUniform
@@ -377,6 +465,7 @@ struct Simulator::Impl
     WGPUBindGroup settingsBindGroup = nullptr;
 
     WGPUComputePipeline clearPipeline = nullptr;
+    WGPUComputePipeline presetPipeline = nullptr;
     WGPUComputePipeline interactPipeline = nullptr;
 
     WGPUComputePipeline stepAcceleratePipeline = nullptr;
@@ -403,6 +492,7 @@ struct Simulator::Impl
 
     Impl(WGPUDevice device);
 
+    void loadPreset(Preset preset);
     void interact(float dt, InteractionSettings const & settings, Vector2f const & oldPosition, Vector2f const & position);
     void step(SimulationSettings const & settings);
 
@@ -415,6 +505,7 @@ struct Simulator::Impl
     void createSettingsBindGroup();
 
     void createClearPipeline();
+    void createPresetPipeline();
     void createInteractPipeline();
     void createStepPipelines();
     void createParticlesPipeline();
@@ -440,10 +531,43 @@ Simulator::Impl::Impl(WGPUDevice device)
     createSettingsBindGroup();
 
     createClearPipeline();
+    createPresetPipeline();
     createInteractPipeline();
     createStepPipelines();
 
     createParticlesPipeline();
+}
+
+void Simulator::Impl::loadPreset(Preset preset)
+{
+    InteractionSettingsUniform interactionSettingsUniform = {};
+    interactionSettingsUniform.preset = (unsigned int)preset;
+
+    wgpuQueueWriteBuffer(queue, interactionSettingsUniformBuffer, 0, &interactionSettingsUniform, sizeof(interactionSettingsUniform));
+
+    WGPUCommandEncoderDescriptor commandEncoderDescriptor = {};
+
+    WGPUCommandEncoder commandEncoder = wgpuDeviceCreateCommandEncoder(device, &commandEncoderDescriptor);
+
+    WGPUComputePassDescriptor computePassDescriptor = {};
+
+    WGPUComputePassEncoder computePassEncoder = wgpuCommandEncoderBeginComputePass(commandEncoder, &computePassDescriptor);
+
+    wgpuComputePassEncoderSetBindGroup(computePassEncoder, 0, buffersBindGroup, 0, nullptr);
+    wgpuComputePassEncoderSetBindGroup(computePassEncoder, 1, settingsBindGroup, 0, nullptr);
+    wgpuComputePassEncoderSetPipeline(computePassEncoder, presetPipeline);
+    wgpuComputePassEncoderDispatchWorkgroups(computePassEncoder, cellsX / 16, cellsY / 16, 1);
+    wgpuComputePassEncoderEnd(computePassEncoder);
+
+    WGPUCommandBufferDescriptor commandBufferDescriptor = {};
+
+    WGPUCommandBuffer commandBuffer = wgpuCommandEncoderFinish(commandEncoder, &commandBufferDescriptor);
+
+    wgpuQueueSubmit(queue, 1, &commandBuffer);
+
+    wgpuCommandBufferRelease(commandBuffer);
+    wgpuComputePassEncoderRelease(computePassEncoder);
+    wgpuCommandEncoderRelease(commandEncoder);
 }
 
 void Simulator::Impl::interact(float dt, InteractionSettings const & settings, Vector2f const & oldPosition, Vector2f const & position)
@@ -703,6 +827,28 @@ void Simulator::Impl::createClearPipeline()
     clearPipeline = wgpuDeviceCreateComputePipeline(device, &pipelineDescriptor);
 }
 
+void Simulator::Impl::createPresetPipeline()
+{
+    WGPUBindGroupLayout bindGroupLayouts[2] =
+    {
+        buffersBindGroupLayout,
+        settingsBindGroupLayout,
+    };
+
+    WGPUPipelineLayoutDescriptor pipelineLayoutDescriptor = {};
+    pipelineLayoutDescriptor.bindGroupLayouts = bindGroupLayouts;
+    pipelineLayoutDescriptor.bindGroupLayoutCount = std::size(bindGroupLayouts);
+
+    WGPUPipelineLayout pipelineLayout = wgpuDeviceCreatePipelineLayout(device, &pipelineLayoutDescriptor);
+
+    WGPUComputePipelineDescriptor pipelineDescriptor = {};
+    pipelineDescriptor.layout = pipelineLayout;
+    pipelineDescriptor.compute.module = shaderModule;
+    pipelineDescriptor.compute.entryPoint = "loadPreset";
+
+    presetPipeline = wgpuDeviceCreateComputePipeline(device, &pipelineDescriptor);
+}
+
 void Simulator::Impl::createInteractPipeline()
 {
     WGPUBindGroupLayout bindGroupLayouts[2] =
@@ -916,6 +1062,11 @@ Simulator::Simulator(WGPUDevice device)
 {}
 
 Simulator::~Simulator() = default;
+
+void Simulator::loadPreset(Preset preset)
+{
+    pimpl_->loadPreset(preset);
+}
 
 void Simulator::interact(float dt, InteractionSettings const & settings, Vector2f const & oldPosition, Vector2f const & position)
 {

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <optional>
+
 enum class InteractionMode : int
 {
     None,
@@ -10,11 +12,19 @@ enum class InteractionMode : int
     MoveWater,
 };
 
+enum class Preset : int
+{
+    Islands,
+    River,
+    Canyon,
+    Shore,
+};
+
 struct InteractionSettings
 {
     InteractionMode mode = InteractionMode::AddWater;
     float radius = 16.f;
     float force = 0.75f;
 
-    void createUI();
+    std::optional<Preset> createUI();
 };

@@ -14,6 +14,7 @@ struct Simulator
     Simulator(WGPUDevice device);
     ~Simulator();
 
+    void loadPreset(Preset preset);
     void interact(float dt, InteractionSettings const & settings, Vector2f const & oldPosition, Vector2f const & position);
     void step(SimulationSettings const & settings);
 

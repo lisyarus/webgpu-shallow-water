@@ -43,7 +43,7 @@ int main()
         ImGui::Begin("Settings", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
         application.createUI();
         simulationSettings.createUI();
-        interactionSettings.createUI();
+        auto preset = interactionSettings.createUI();
         viewSettings.createUI();
         ImGui::End();
 
@@ -58,6 +58,9 @@ int main()
 
         if (interactionSettings.mode != InteractionMode::None)
             viewSettings.action = {mouse, interactionSettings.radius};
+
+        if (preset)
+            simulator.loadPreset(*preset);
 
         if (application.mouseDown())
         {

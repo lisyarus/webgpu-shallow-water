@@ -5,7 +5,7 @@
 #include <iterator>
 #include <format>
 
-void InteractionSettings::createUI()
+std::optional<Preset> InteractionSettings::createUI()
 {
     ImGui::SeparatorText("Interaction");
 
@@ -28,4 +28,20 @@ void InteractionSettings::createUI()
         ImGui::SliderFloat("Radius", &radius, 1.f, 256.f, "%.0f");
         ImGui::SliderFloat("Force", &force, 0.f, 1.f, forceStr.data());
     }
+
+    static char const * presetNames[] =
+    {
+        "Islands",
+        "River",
+        "Canyon",
+        "Shore",
+    };
+
+    int chosenPreset = -1;
+    ImGui::Combo("Load preset", &chosenPreset, presetNames, std::size(presetNames));
+
+    if (chosenPreset != -1)
+        return (Preset)(chosenPreset);
+
+    return std::nullopt;
 }
