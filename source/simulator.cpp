@@ -44,9 +44,19 @@ struct Particle
 @group(1) @binding(1) var<uniform> simulationSettings : SimulationSettings;
 
 @compute @workgroup_size(16, 16)
-fn clearBedWaterTexture(@builtin(global_invocation_id) id: vec3u)
+fn clearBuffers(@builtin(global_invocation_id) id: vec3u)
 {
     textureStore(bedWaterTexture, id.xy, vec4f(0.0));
+    textureStore(flowXTexture, id.xy, vec4f(0.0));
+    textureStore(flowYTexture, id.xy, vec4f(0.0));
+
+    if (id.x + 1u == simulationSettings.size[0]) {
+        textureStore(flowXTexture, id.xy + vec2u(1u, 0u), vec4f(0.0));
+    }
+
+    if (id.y + 1u == simulationSettings.size[1]) {
+        textureStore(flowXTexture, id.xy + vec2u(0u, 1u), vec4f(0.0));
+    }
 }
 
 fn pointToSegmentDistance(p : vec2f, s0 : vec2f, s1 : vec2f) -> f32
@@ -412,6 +422,8 @@ struct Simulator::Impl
     void recreateGridBuffers();
     void recreateParticleBuffers();
     void recreateBuffersBindGroup();
+
+    void clearGridBuffers();
 };
 
 Simulator::Impl::Impl(WGPUDevice device)
@@ -477,6 +489,7 @@ void Simulator::Impl::interact(float dt, InteractionSettings const & settings, V
 void Simulator::Impl::step(SimulationSettings const & settings)
 {
     bool needUpdateBuffersBindGroup = false;
+    bool needClearBuffers = false;
 
     if (settings.cellsX != cellsX || settings.cellsY != cellsY)
     {
@@ -485,6 +498,7 @@ void Simulator::Impl::step(SimulationSettings const & settings)
 
         recreateGridBuffers();
         needUpdateBuffersBindGroup = true;
+        needClearBuffers = true;
     }
 
     if (settings.particleCount != particleCount)
@@ -497,6 +511,9 @@ void Simulator::Impl::step(SimulationSettings const & settings)
 
     if (needUpdateBuffersBindGroup)
         recreateBuffersBindGroup();
+
+    if (needClearBuffers)
+        clearGridBuffers();
 
     if (settings.paused)
         return;
@@ -666,9 +683,10 @@ void Simulator::Impl::createSettingsBindGroup()
 
 void Simulator::Impl::createClearPipeline()
 {
-    WGPUBindGroupLayout bindGroupLayouts[1] =
+    WGPUBindGroupLayout bindGroupLayouts[2] =
     {
         buffersBindGroupLayout,
+        settingsBindGroupLayout,
     };
 
     WGPUPipelineLayoutDescriptor pipelineLayoutDescriptor = {};
@@ -680,7 +698,7 @@ void Simulator::Impl::createClearPipeline()
     WGPUComputePipelineDescriptor pipelineDescriptor = {};
     pipelineDescriptor.layout = pipelineLayout;
     pipelineDescriptor.compute.module = shaderModule;
-    pipelineDescriptor.compute.entryPoint = "clearBedWaterTexture";
+    pipelineDescriptor.compute.entryPoint = "clearBuffers";
 
     clearPipeline = wgpuDeviceCreateComputePipeline(device, &pipelineDescriptor);
 }
@@ -864,6 +882,33 @@ void Simulator::Impl::recreateBuffersBindGroup()
     bindGroupDescriptor.entries = entries;
 
     buffersBindGroup = wgpuDeviceCreateBindGroup(device, &bindGroupDescriptor);
+}
+
+void Simulator::Impl::clearGridBuffers()
+{
+    WGPUCommandEncoderDescriptor commandEncoderDescriptor = {};
+
+    WGPUCommandEncoder commandEncoder = wgpuDeviceCreateCommandEncoder(device, &commandEncoderDescriptor);
+
+    WGPUComputePassDescriptor computePassDescriptor = {};
+
+    WGPUComputePassEncoder computePassEncoder = wgpuCommandEncoderBeginComputePass(commandEncoder, &computePassDescriptor);
+
+    wgpuComputePassEncoderSetBindGroup(computePassEncoder, 0, buffersBindGroup, 0, nullptr);
+    wgpuComputePassEncoderSetBindGroup(computePassEncoder, 1, settingsBindGroup, 0, nullptr);
+    wgpuComputePassEncoderSetPipeline(computePassEncoder, clearPipeline);
+    wgpuComputePassEncoderDispatchWorkgroups(computePassEncoder, cellsX / 16, cellsY / 16, 1);
+    wgpuComputePassEncoderEnd(computePassEncoder);
+
+    WGPUCommandBufferDescriptor commandBufferDescriptor = {};
+
+    WGPUCommandBuffer commandBuffer = wgpuCommandEncoderFinish(commandEncoder, &commandBufferDescriptor);
+
+    wgpuQueueSubmit(queue, 1, &commandBuffer);
+
+    wgpuCommandBufferRelease(commandBuffer);
+    wgpuComputePassEncoderRelease(computePassEncoder);
+    wgpuCommandEncoderRelease(commandEncoder);
 }
 
 Simulator::Simulator(WGPUDevice device)
