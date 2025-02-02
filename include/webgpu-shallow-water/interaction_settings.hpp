@@ -12,7 +12,7 @@ enum class InteractionMode : int
 
 struct InteractionSettings
 {
-    InteractionMode mode = InteractionMode::None;
+    InteractionMode mode = InteractionMode::AddWater;
     float radius = 16.f;
     float force = 0.75f;
 
