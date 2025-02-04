@@ -1,5 +1,5 @@
-find_library(wgpu-native_LIBRARIES NAMES "wgpu_native" HINTS "${WGPU_NATIVE_ROOT}")
-find_path(wgpu-native_INCLUDE_DIRS NAMES "webgpu.h" HINTS "${WGPU_NATIVE_ROOT}")
+find_library(wgpu-native_LIBRARIES NAMES "wgpu_native" HINTS "${WGPU_NATIVE_ROOT}" "${WGPU_NATIVE_ROOT}/lib")
+find_path(wgpu-native_INCLUDE_DIRS NAMES "webgpu.h" HINTS "${WGPU_NATIVE_ROOT}" "${WGPU_NATIVE_ROOT}/include" "${WGPU_NATIVE_ROOT}/include/webgpu")
 
 include(FindPackageHandleStandardArgs)
 find_package_handle_standard_args(wgpu-native DEFAULT_MSG wgpu-native_INCLUDE_DIRS wgpu-native_LIBRARIES)
