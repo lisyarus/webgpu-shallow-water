@@ -1,4 +1,4 @@
-![](video.mp4)
+![](video.gif)
 
 # About
 
