@@ -17,27 +17,27 @@ Build the project first (see instructions below), then simply run it. By default
 On the left you'll see a bunch of settings:
 
 * **Application settings**
-** `VSync` -- toggle vsync (the simulations runs faster with vsync off, since it does 1 simulation step per frame)
+    * `VSync` -- toggle vsync (the simulations runs faster with vsync off, since it does 1 simulation step per frame)
 * **Simulation settings**
-** `Cells X` -- the size of simulation grid (i.e. number of cells) in X
-** `Cells Y` -- the size of simulation grid (i.e. number of cells) in Y
-** `dt` -- the time delta used for integration (note that larger values lead to instability)
-** `Gravity` -- the strength of gravity (note that larger values lead to instability)
-** `Friction` -- the fluid friction (note that larger values lead to instability)
-** `Particles` -- the number of particles simulated to visualize the fluid flow
+    * `Cells X` -- the size of simulation grid (i.e. number of cells) in X
+    * `Cells Y` -- the size of simulation grid (i.e. number of cells) in Y
+    * `dt` -- the time delta used for integration (note that larger values lead to instability)
+    * `Gravity` -- the strength of gravity (note that larger values lead to instability)
+    * `Friction` -- the fluid friction (note that larger values lead to instability)
+    * `Particles` -- the number of particles simulated to visualize the fluid flow
 * **Borders settings**
-** `Left` -- set the left border to be a *wall*, a *source* of fluid, a *drain* for fluid, or a *wave* generator
-** `Right` -- same for the right border
-** `Bottom` -- same for the bottom border
-** `Top` -- same for the top border
+    * `Left` -- set the left border to be a *wall*, a *source* of fluid, a *drain* for fluid, or a *wave* generator
+    * `Right` -- same for the right border
+    * `Bottom` -- same for the bottom border
+    * `Top` -- same for the top border
 * **Interaction settings**
-** `Action` -- select mouse button action from *no action*, *adding bed* (i.e. terrain below water), *removing bed*, *adding water*, *removing water*, or *moving water* around
-** `Radius` -- select mouse action radius, in grid cells (it is visualized as a circle)
-** `Force` -- select mouse action force (larger means stronger action, e.g. more water added)
-** `Load preset` -- load one of available terrain presets (these are randomized!)
+    * `Action` -- select mouse button action from *no action*, *adding bed* (i.e. terrain below water), *removing bed*, *adding water*, *removing water*, or *moving water* around
+    * `Radius` -- select mouse action radius, in grid cells (it is visualized as a circle)
+    * `Force` -- select mouse action force (larger means stronger action, e.g. more water added)
+    * `Load preset` -- load one of available terrain presets (these are randomized!)
 * **View settings**
-** `Show velocity` -- show velocity vectors (these are hard to see at grid sizes larger than 64)
-** `Show particles` -- show particles advected by the fluid flow
+    * `Show velocity` -- show velocity vectors (these are hard to see at grid sizes larger than 64)
+    * `Show particles` -- show particles advected by the fluid flow
 
 # Simulation
 
